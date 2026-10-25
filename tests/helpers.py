@@ -21,6 +21,7 @@ def reset():
     with db.tx() as c:
         for t in api.TABLES + ["settings"]: c.execute(f"DELETE FROM {t}")
     chat._running.clear(); chat._cancelled.clear()
+    from sf import awake, remote; awake.release(); remote.clear_failures()
 
 class FakeModel:
     """Replaces the model: records what it was sent and streams a fixed reply."""

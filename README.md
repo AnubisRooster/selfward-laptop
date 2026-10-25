@@ -39,6 +39,18 @@ ollama pull llama3.2:3b && ollama pull nomic-embed-text   # chat + memory embedd
 - Onboarding (notice you must accept, profile and intake that shape every prompt, country, default guide), PIN lock with a pause after repeated wrong PINs, light/dark/system theme,
   Markdown and JSON export, passphrase-encrypted backup and restore, erase everything, optional cloud model with an API key (clearly marked: then your words leave this computer).
 
+## From your phone (Tailscale, no app store)
+
+Settings → **Remote access** walks through it; it is off by default. Ported from SmartWard (same front door, same tests), with these differences. The API still listens only on `127.0.0.1`; [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) publishes it to *your own devices only* (never Funnel, which is public).
+Selfward uses its own https port so it can sit beside SmartWard: `tailscale serve --bg --https=8443 127.0.0.1:8100`, then `https://<laptop>.<tailnet>.ts.net:8443`. On the phone you sign in once with a remote passphrase, then Add to Home Screen.
+
+- **The front door** (`sf/remote.py`): a request that came through the proxy must be from the allowed Tailscale account and Tailscale host name, carry a sign-in session (cookie `HttpOnly; Secure; SameSite=Strict`, stored hashed) and, for writes, come from the same site. Five wrong passphrases lock sign-in for five minutes. Requests whose `Host` isn't a loopback name are refused even locally (DNS rebinding). Replies to a phone are never cached.
+- **Seven days**, not SmartWard's 30: a phone stays signed in for 7 days after you last use it. Changing the passphrase, or turning remote access off, signs every phone out.
+- **What a phone can do:** everything in the app (you chose that), including settings, backup, export and erase, so keep the passphrase to yourself and sign out of a phone you lose. Two things stay on the laptop because a stolen phone could abuse them: managing remote access itself (so it can't keep itself signed in or lock you out) and the laptop's own microphone (so nobody can listen to the room). The laptop's PIN screen does not appear on a phone; the remote passphrase is its lock. Remote settings are never written through Settings and never carried in a backup or restore.
+- **Talking from the phone:** the phone cuts what you say into sentences itself (`frontend/src/vad.ts`), sends each as a small WAV to `POST /api/voice/transcribe`, and the laptop's Whisper (SmartWard's `stt/worker.py`) turns it into text. Nothing goes to Apple or Google. Spoken words get the same crisis check as typed ones. Answers are spoken by the natural voice through `/api/tts`.
+- **Availability:** works only while the laptop is awake and Selfward is running. "Keep this laptop awake" holds a `systemd-inhibit` lock while remote access is on; closing the lid still suspends it.
+- **Tests:** `tests/test_remote.py` (each check in the front door was switched off in turn and a test failed every time), `tests/test_remote_panel.py`, `tests/test_voice.py`, `frontend/src/__tests__/phone.test.ts`. Not tested against real Tailscale (it is not installed on this laptop): the tests send the headers Tailscale Serve adds.
+
 ## What is left
 
 Everything from the iPhone app has a Linux counterpart now, apart from the items below. Ideas not done: mood in the Narrative or in the guide's context (the phone does neither), automatic Narrative updates, a model pass for Inner Map entities.

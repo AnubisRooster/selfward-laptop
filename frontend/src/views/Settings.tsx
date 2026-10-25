@@ -5,6 +5,8 @@ import { Badge, Btn, Card, Err, Field, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
 import { ThemePref, readPref, setPref } from '../theme';
 import DesktopSettings from './DesktopSettings';
+import RemoteSettings from './RemoteSettings';
+import { onPhone } from '../device';
 
 function useSettings() {
   const { data, reload } = useLoad<any>('/settings');
@@ -99,6 +101,8 @@ export default function Settings() {
           {v.api_key && <Btn kind="ghost" onClick={async () => { await put('/settings', { values: { api_key: '' } }); reload(); setKey('api_key', false); toast.ok('Key removed'); }}>Remove key</Btn>}</div>
         <div className="flex gap-2 text-xs">{models && <><Badge tone={models.ollama_up ? 'green' : 'amber'}>{models.ollama_up ? 'Ollama running' : 'Ollama not running'}</Badge></>}</div>
       </Card>
+
+      {onPhone ? <ThisPhone /> : <RemoteSettings />}
 
       <VoiceCard v={v} setKey={setKey} />
 
@@ -223,7 +227,7 @@ function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => voi
       <div className="text-xs text-zinc-500">Reading aloud and hands-free talking both run on this computer: the voice (Kokoro) and the listening (Whisper) never send audio or words anywhere. The microphone is open only while hands-free is on in a session, and it closes when you leave, lock, or hide the window.</div>
       <Err>{err}</Err>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Natural voice</span>{up ? <Badge tone="green">Running · {voices.length} voices</Badge> : tts?.installed ? <Badge tone="amber">Starting… (it starts by itself)</Badge> : <Badge tone="red">Not installed</Badge>}</div>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speech input (hands-free)</span>{mic?.installed ? <Badge tone="green">Installed · {mic.model}</Badge> : <Badge tone="red">Not installed</Badge>}</div>
+      {!onPhone && <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speech input (hands-free)</span>{mic?.installed ? <Badge tone="green">Installed · {mic.model}</Badge> : <Badge tone="red">Not installed</Badge>}</div>}
       {(!tts?.installed || (mic && !mic.installed)) && <div className="text-xs text-zinc-500">Selfward uses the voice and listening models from SmartWard’s folder (about 1 GB, so they aren’t copied). {tts?.home ? <>Found: <code>{tts.home}</code>.</> : <>None found: install SmartWard’s <code>tts/setup.sh</code> and <code>stt/setup.sh</code>, or set <code>SELFWARD_VOICE_HOME</code> to a folder that has them.</>} Without them, the browser’s own voice reads aloud and hands-free is unavailable.</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Voice</span><Seg label="Voice engine" value={engine} onChange={x => save({ tts_engine: x })} options={[['auto', 'Automatic'], ['kokoro', 'Natural'], ['browser', 'Browser']]} /></div>
       {natural && <>
@@ -235,6 +239,15 @@ function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => voi
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speaking rate {rate.toFixed(2)}×</span>
         <input type="range" min="0.5" max="2" step="0.05" aria-label="Speaking rate" value={rate} onChange={e => setRate(Number(e.target.value))} onMouseUp={() => save({ voice_rate: rate })} onKeyUp={() => save({ voice_rate: rate })} onTouchEnd={() => save({ voice_rate: rate })} /></div>
       {catalog && <div className="text-xs text-zinc-500">Start a session with <b>Talk</b> on the Sessions list, or press the microphone in a session.</div>}
+    </Card>
+  );
+}
+
+function ThisPhone() {
+  return (
+    <Card className="space-y-2"><h2 className="font-medium">This phone</h2>
+      <div className="text-xs text-zinc-500">You are signed in to your laptop’s Selfward over your private network, for 7 days after you last use it. Remote access itself, and the laptop’s own microphone, can only be managed on the laptop.</div>
+      <Btn kind="danger" onClick={async () => { try { await post('/remote/logout'); } catch { /* already signed out */ } location.reload(); }}>Sign out of this phone</Btn>
     </Card>
   );
 }

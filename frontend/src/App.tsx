@@ -5,6 +5,8 @@ import { Modal, Spin, cx } from './ui';
 import { FeedbackHost } from './feedback';
 import { LifeBuoy, MessageSquare, BookOpenText, HeartPulse, Network, NotebookPen, Settings as SettingsIcon, Lock } from 'lucide-react';
 import { onDesktopEvent } from './desktop';
+import { onPhone } from './device';
+import RemoteSignIn from './RemoteSignIn';
 import { reloadForUpdate } from './ErrorBoundary';
 import Onboarding from './views/Onboarding';
 // A view that can't be fetched means this window predates the installed build: reload to pick the new one up.
@@ -57,11 +59,13 @@ export default function App() {
   const { data: st, error, reload } = useLoad<any>('/status', undefined, 4000);
   const [locked, setLocked] = useState(() => { try { return sessionStorage.getItem('sf.unlocked') !== '1'; } catch { return true; } });
   const [help, setHelp] = useState(false);
+  const [needSignIn, setNeedSignIn] = useState(false);
+  useEffect(() => { const f = () => setNeedSignIn(true); window.addEventListener('sf-remote-auth', f); return () => window.removeEventListener('sf-remote-auth', f); }, []);
   const idle = useRef<any>(null);
   const firstBuild = useRef<number | null>(null);
   useEffect(() => { if (st?.ui_build == null) return; if (firstBuild.current == null) firstBuild.current = st.ui_build; }, [st?.ui_build]);
   const stale = st?.ui_build != null && firstBuild.current != null && st.ui_build !== firstBuild.current;
-  const lockOn = !!st?.lock_enabled;
+  const lockOn = !!st?.lock_enabled && !onPhone;      // on a phone the remote passphrase is the lock: the laptop's PIN screen stays on the laptop
   const lockNow = () => { setLocked(true); try { sessionStorage.removeItem('sf.unlocked'); } catch {} };
   useEffect(() => { const f = () => lockNow(); window.addEventListener('sf-lock', f); return () => window.removeEventListener('sf-lock', f); }, []);
 
@@ -85,37 +89,38 @@ export default function App() {
     return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pointerdown', reset); window.removeEventListener('keydown', reset); clearTimeout(idle.current); };
   }, [lockOn]);
 
+  if (needSignIn) return <RemoteSignIn onDone={() => { setNeedSignIn(false); reload(); }} />;
   if (!st) {
     return <><div className="flex h-full items-center justify-center p-8 text-center" role={error ? 'alert' : 'status'}>
-      <div><div className="mb-2 text-lg">{error ? 'Selfward’s backend isn’t running' : 'Starting…'}</div>
+      <div><div className="mb-2 text-lg">{error ? (onPhone ? 'Can’t reach your laptop' : 'Selfward’s backend isn’t running') : 'Starting…'}</div>
         {error && <>
-          <div className="mb-3 text-sm text-zinc-500">Selfward normally restarts it by itself. If this stays, quit Selfward from the tray icon and open it again.<br />The log is in <code className="rounded bg-zinc-800 px-1">~/.local/state/selfward/api.log</code>.</div>
+          <div className="mb-3 text-sm text-zinc-500">{onPhone ? <>Your laptop may be asleep or offline, or Selfward may not be running. Check that it is on and that Tailscale is connected on both devices, then try again.</> : <>Selfward normally restarts it by itself. If this stays, quit Selfward from the tray icon and open it again.<br />The log is in <code className="rounded bg-zinc-800 px-1">~/.local/state/selfward/api.log</code>.</>}</div>
           <button onClick={() => reload()} className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm hover:bg-zinc-700">Try again</button></>}</div></div><FeedbackHost /></>;
   }
   if (lockOn && locked) return <><LockScreen onUnlock={() => { try { sessionStorage.setItem('sf.unlocked', '1'); } catch {} setLocked(false); }} /><FeedbackHost /></>;
   if (!st.onboarding_completed) return <><Onboarding status={st} onDone={reload} /><FeedbackHost /></>;
 
   const Body = { chats: Chats, map: InnerMap, insights: Insights, narrative: Narrative, mood: Mood, settings: Settings }[tab];
-  const navBtn = (active: boolean, label: string, Icon: typeof Lock, onClick: () => void) => (
+  const navBtn = (active: boolean, label: string, Icon: typeof Lock, onClick: () => void, short = label) => (
     <button key={label} onClick={onClick} aria-current={active ? 'page' : undefined}
       className={cx('flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] md:flex-none md:flex-row md:gap-2 md:px-3 md:py-2 md:text-sm', active ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200')}>
-      <Icon size={16} aria-hidden className="shrink-0" /><span>{label}</span></button>);
+      <Icon size={16} aria-hidden className="shrink-0" /><span className="md:hidden">{short}</span><span className="hidden md:inline">{label}</span></button>);
 
   return (
     <div className="flex h-full flex-col md:flex-row">
-      <nav className="flex shrink-0 gap-0.5 border-b border-zinc-800 bg-zinc-950 p-1.5 md:w-48 md:flex-col md:gap-1 md:border-b-0 md:border-r md:p-3" aria-label="Main">
+      <nav className="order-2 flex shrink-0 gap-0.5 border-t border-zinc-800 bg-zinc-950 p-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] md:order-none md:w-48 md:flex-col md:gap-1 md:border-b-0 md:border-r md:border-t-0 md:p-3" aria-label="Main">
         <div className="hidden px-2 pb-3 pt-1 md:block"><div className="text-lg font-semibold">Selfward</div><div className="text-xs text-zinc-500">Private, on this computer</div></div>
-        {navBtn(tab === 'chats', 'Sessions', MessageSquare, () => go('chats'))}
-        {navBtn(tab === 'map', 'Inner Map', Network, () => go('map'))}
+        {navBtn(tab === 'chats', 'Sessions', MessageSquare, () => go('chats'), 'Talk')}
+        {navBtn(tab === 'map', 'Inner Map', Network, () => go('map'), 'Map')}
         {navBtn(tab === 'insights', 'Insights', NotebookPen, () => go('insights'))}
         {navBtn(tab === 'narrative', 'Narrative', BookOpenText, () => go('narrative'))}
         {navBtn(tab === 'mood', 'Mood', HeartPulse, () => go('mood'))}
         <div className="hidden flex-1 md:block" />
         {navBtn(tab === 'settings', 'Settings', SettingsIcon, () => go('settings'))}
-        <button onClick={() => setHelp(true)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-zinc-900" title="Crisis lines and emergency numbers"><LifeBuoy size={16} aria-hidden /><span>Get help now</span></button>
+        <button onClick={() => setHelp(true)} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] text-amber-300 hover:bg-zinc-900 md:flex-none md:flex-row md:gap-2 md:px-3 md:py-2 md:text-sm" title="Crisis lines and emergency numbers"><LifeBuoy size={16} aria-hidden className="shrink-0" /><span className="md:hidden">Help</span><span className="hidden md:inline">Get help now</span></button>
         {lockOn && <button onClick={lockNow} title="Lock Selfward" aria-label="Lock Selfward" className="hidden items-center gap-2 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-900 md:flex"><Lock size={16} aria-hidden /><span>Lock</span></button>}
       </nav>
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main className="order-1 flex min-h-0 min-w-0 flex-1 flex-col md:order-none">
         {stale && <div role="status" className="flex items-center justify-between gap-3 border-b border-indigo-800 bg-indigo-950/40 px-4 py-2 text-sm">Selfward was updated. <button className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500" onClick={() => location.reload()}>Reload to use the new version</button></div>}
         {!st.preflight.ollama && st.model.startsWith('ollama') && <div role="status" className="border-b border-amber-900 bg-amber-950/40 px-4 py-2 text-sm text-amber-200">Ollama isn’t running, so I can’t answer yet. Start it (<code>ollama serve</code>) or choose another model in Settings.</div>}
         <div className="min-h-0 flex-1 overflow-hidden"><Suspense fallback={<div className="p-6" role="status"><Spin /></div>}><Body /></Suspense></div>

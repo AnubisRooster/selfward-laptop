@@ -82,10 +82,11 @@ DEFAULTS = {
     "therapist_name": "", "companion_name": "Kai", "spiritual_name": "Sage",
     "companion_personality": "warm", "companion_gender": "unspecified", "spiritual_tradition": "interfaith",
     "tts_engine": "auto", "tts_url": "http://127.0.0.1:8880", "tts_voice": "af_heart", "voice_rate": 1.0, "voice_therapist": "", "voice_companion": "", "voice_spiritual": "", "voice_name": "",
+    "remote_enabled": False, "remote_keep_awake": True, "remote_login": "", "remote_host": "", "remote_hash": "", "remote_sessions": {}, "remote_log": [],
     "context_tokens": 8192, "remember_across_sessions": True,
     "user_name": "", "user_pronouns": "", "user_age": "", "intake_concerns": "", "intake_history": "", "intake_goals": "",
 }
-SECRET = ("lock_hash", "api_key")
+SECRET = ("lock_hash", "api_key", "remote_hash")
 
 def get_setting(key):
     r = q("SELECT value FROM settings WHERE key=?", (key,), one=True)
@@ -103,6 +104,7 @@ def all_settings(hide=SECRET):
         except Exception: out[r["key"]] = r["value"]
     for h in hide:
         if h in out: out[h] = bool(out[h])
+    for k in ("remote_sessions", "remote_log"): out.pop(k, None)             # who is signed in is not for the settings page to hand out
     return out
 
 def now(): return time.time()

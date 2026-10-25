@@ -88,8 +88,14 @@ export const speech = {
   queue: [] as string[], idx: 0, on: false, paused: false, rate: 1, engine: '' as '' | 'kokoro' | 'browser', notice: '',
   listeners: new Set<() => void>(),
   token: 0, flat: [] as { part: number; text: string }[], cursor: 0,
-  audio: null as HTMLAudioElement | null, clips: new Map<number, Promise<string>>(), aborts: new Set<AbortController>(), cfg: null as SpeechConfig | null,
+  audio: null as HTMLAudioElement | null, el: null as HTMLAudioElement | null, clips: new Map<number, Promise<string>>(), aborts: new Set<AbortController>(), cfg: null as SpeechConfig | null,
   notify() { speech.listeners.forEach(f => f()); },
+  /** One audio element for the whole session. Phones only let an element play after a tap has "unlocked" it, so a new element per clip would be blocked. */
+  element(): HTMLAudioElement { if (!speech.el) speech.el = new Audio(); return speech.el; },
+  /** Call from a tap or click (the hands-free switch): lets later spoken answers play on a phone. */
+  unlock() {
+    try { const a = speech.element(); a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='; void a.play().catch(() => {}); } catch { /* not supported: reading just won't start by itself */ }
+  },
 
   /** Settings + whether the natural voice is up decide which voice speaks. */
   /** `persona` is the guide speaking: each can have its own voice (Settings → Voice); otherwise the default voice. */
@@ -149,7 +155,7 @@ export const speech = {
       }
       if (!alive()) return;
       await new Promise<void>(resolve => {
-        const audio = new Audio(url); speech.audio = audio;
+        const audio = speech.element(); audio.src = url; speech.audio = audio;
         audio.onended = () => resolve(); audio.onerror = () => resolve();
         void audio.play().catch(() => resolve());
       });
@@ -204,7 +210,7 @@ export const speech = {
     const text = 'This is how I will sound when we talk.';
     if (engine === 'kokoro') {
       const r = await http.post('/tts', { text, voice, speed: rate }, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data as Blob); const audio = new Audio(url); speech.audio = audio;
+      const url = URL.createObjectURL(r.data as Blob); const audio = speech.element(); audio.src = url; speech.audio = audio;
       audio.onended = () => URL.revokeObjectURL(url); await audio.play(); return '';
     }
     if (!speech.browserVoices) return 'This window can’t speak with a browser voice.';

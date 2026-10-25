@@ -45,6 +45,30 @@ class Speech(unittest.TestCase):
     def test_the_voice_folder_cannot_be_chosen_through_settings(self):
         c.put("/api/settings", json={"values": {"voice_home": "/tmp/evil", "tts_start": "rm -rf /"}}); self.assertNotIn("voice_home", c.get("/api/settings").json())
 
+FAKE_WORKER = os.path.join(os.path.dirname(__file__), "fixtures", "fake_worker.py")
+
+class PhoneRecordings(unittest.TestCase):
+    """A phone cuts its own speech into sentences and posts each one; the laptop's speech model turns it into text."""
+    def setUp(self): reset(); os.environ["SELFWARD_STT_CMD"] = f"{sys.executable} {FAKE}"; os.environ["SELFWARD_STT_WORKER_CMD"] = f"{sys.executable} {FAKE_WORKER}"; stt.reset()
+    def tearDown(self): stt.reset(); os.environ.pop("SELFWARD_STT_CMD", None); os.environ.pop("SELFWARD_STT_WORKER_CMD", None)
+    def test_a_recording_becomes_text_and_nothing_is_kept(self):
+        wav = b"RIFF" + b"\0" * 1000
+        r = c.post("/api/voice/transcribe", content=wav, headers={"content-type": "audio/wav"}); self.assertEqual(r.status_code, 200); self.assertEqual(r.json()["text"], "heard 1004 bytes as .wav")
+        self.assertEqual(c.post("/api/voice/transcribe", content=wav, headers={"content-type": "audio/webm;codecs=opus"}).json()["text"], "heard 1004 bytes as .webm")
+    def test_bad_recordings_are_refused(self):
+        self.assertEqual(c.post("/api/voice/transcribe", content=b"", headers={"content-type": "audio/wav"}).status_code, 400)
+        self.assertEqual(c.post("/api/voice/transcribe", content=b"x" * 10, headers={"content-type": "text/plain"}).status_code, 415)
+        self.assertEqual(c.post("/api/voice/transcribe", content=b"x" * (stt.MAX_AUDIO_BYTES + 1), headers={"content-type": "audio/wav"}).status_code, 413)
+    def test_a_signed_in_phone_may_send_recordings_and_nobody_else(self):
+        from tests.test_remote import VIA, turn_on, sign_in
+        VIA.pop("Cookie", None); turn_on()
+        r = c.post("/api/voice/transcribe", content=b"RIFF" + b"\0" * 50, headers={**VIA, "content-type": "audio/wav"}); self.assertEqual(r.status_code, 401)
+        sign_in(); r = c.post("/api/voice/transcribe", content=b"RIFF" + b"\0" * 50, headers={**VIA, "content-type": "audio/wav"}); self.assertEqual(r.status_code, 200)
+    def test_a_missing_speech_model_is_a_plain_503(self):
+        os.environ.pop("SELFWARD_STT_CMD"); os.environ.pop("SELFWARD_STT_WORKER_CMD"); old = tts.voice_home; tts.voice_home = lambda: None
+        try: r = c.post("/api/voice/transcribe", content=b"RIFF" + b"\0" * 50, headers={"content-type": "audio/wav"}); self.assertEqual(r.status_code, 503); self.assertIn("isn't installed", r.json()["detail"])
+        finally: tts.voice_home = old
+
 class Listener(unittest.TestCase):
     def setUp(self): reset(); os.environ["SELFWARD_STT_CMD"] = f"{sys.executable} {FAKE}"; stt.reset()
     def tearDown(self): stt.reset(); os.environ.pop("SELFWARD_STT_CMD", None)

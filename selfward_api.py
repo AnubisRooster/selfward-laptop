@@ -4,12 +4,23 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, safety, stt, tts
+from sf import awake, db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, remote, safety, stt, tailscale, tts
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:8100", "http://127.0.0.1:8100", "tauri://localhost", "http://tauri.localhost"],
                    allow_methods=["*"], allow_headers=["*"])
+
+@app.middleware("http")
+async def front_door(request: Request, call_next):
+    """Phones come through Tailscale Serve; they sign in first (sf/remote.py). Local use is unchanged."""
+    refusal = remote.decide(request.method, request.url.path, request.headers, request.cookies.get(remote.COOKIE))
+    if refusal:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": refusal[1], "remote_auth": refusal[0] == 401}, status_code=refusal[0], headers={"Cache-Control": "no-store"})
+    resp = await call_next(request)
+    if remote.is_remote(request.headers) and request.url.path.startswith("/api/"): resp.headers["Cache-Control"] = "no-store"      # nothing from the journal is cached on a phone
+    return resp
 
 def bad(msg, code=400): raise HTTPException(code, msg)
 
@@ -53,7 +64,7 @@ LOCKED = ("lock_hash", "lock_enabled")
 @app.put("/api/settings")
 def put_settings(body: dict):
     for k, v in (body.get("values") or {}).items():
-        if k in LOCKED or k not in db.DEFAULTS: continue
+        if k in LOCKED or k.startswith("remote_") or k not in db.DEFAULTS: continue
         if k == "api_key" and v is True: continue          # the UI only ever sees "set / not set"
         if k == "default_persona" and v not in personas.KINDS: bad("Unknown persona.")
         if k == "default_modality" and v not in ALL_MODALITIES: bad("Unknown approach.")
@@ -122,7 +133,77 @@ def voice_resume(): return {"ok": stt.send("resume")}
 def voice_poll(after: int = 0): return stt.poll(after)
 
 @app.on_event("shutdown")
-def _close_microphone(): stt.stop()
+def _close_microphone(): stt.stop(); stt.stop_worker(); awake.release()
+
+@app.on_event("startup")
+def _start(): awake.sync()
+
+@app.post("/api/voice/transcribe")
+async def voice_transcribe(request: Request):
+    """A phone's recording (the body is the audio file) -> text, with the speech model on this laptop. Nothing is stored."""
+    import tempfile
+    from starlette.concurrency import run_in_threadpool
+    body = await request.body()
+    if not body: bad("No audio received.")
+    if len(body) > stt.MAX_AUDIO_BYTES: bad("That recording is too long. Say a shorter sentence.", 413)
+    kind = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    ext = {"audio/wav": ".wav", "audio/x-wav": ".wav", "audio/webm": ".webm", "audio/mp4": ".mp4", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/aac": ".aac"}.get(kind)
+    if not ext: bad("Unsupported audio type.", 415)
+    def work():
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as f:
+            f.write(body); f.flush(); return stt.transcribe(f.name)
+    try: return {"text": await run_in_threadpool(work)}
+    except RuntimeError as e: bad(str(e), 503)
+
+# ---------- remote (phone) access ----------
+@app.post("/api/remote/login")
+def remote_login(body: dict, request: Request, response: Response):
+    wait = remote.locked_for()
+    if wait > 0: bad(f"Too many wrong tries. Wait {int(wait // 60) + 1} minutes.", 429)
+    time.sleep(0.5)
+    stored = db.get_setting("remote_hash")
+    if not stored or not remote.check_pass(str(body.get("passphrase", "")), stored):
+        remote.record_failure(); remote.log("wrong passphrase", request.headers.get("tailscale-user-login", "")); bad("Wrong passphrase.", 403)
+    remote.clear_failures(); token = remote.new_session(request.headers.get("user-agent", "")); remote.log("signed in", request.headers.get("user-agent", "")[:80])
+    response.set_cookie(remote.COOKIE, token, max_age=remote.SESSION_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
+    return {"ok": True}
+
+@app.get("/api/remote/session")
+def remote_session(request: Request):
+    return {"enabled": remote.enabled(), "signed_in": bool(remote.valid_session(request.cookies.get(remote.COOKIE)))}
+
+@app.post("/api/remote/logout")
+def remote_logout(request: Request, response: Response):
+    sid = remote.valid_session(request.cookies.get(remote.COOKIE))
+    if sid: remote.revoke(sid)
+    response.delete_cookie(remote.COOKIE, path="/"); return {"ok": True}
+
+# Managing remote access is only possible from this computer (see LAPTOP_ONLY in sf/remote.py).
+@app.get("/api/remote/status")
+def remote_status():
+    return {"enabled": remote.enabled(), "login": db.get_setting("remote_login") or "", "host": db.get_setting("remote_host") or "", "has_passphrase": bool(db.get_setting("remote_hash")),
+            "keep_awake": db.get_setting("remote_keep_awake") is not False, "awake_held": awake.running(), "sessions": remote.list_sessions(), "log": (db.get_setting("remote_log") or [])[-20:]}
+
+@app.put("/api/remote/config")
+def remote_config(body: dict):
+    if body.get("passphrase"):
+        if len(str(body["passphrase"])) < 8: bad("Use at least 8 characters for the remote passphrase.")
+        db.set_setting("remote_hash", remote.hash_pass(str(body["passphrase"]))); remote.revoke("all")      # a new passphrase signs every phone out
+    if "login" in body: db.set_setting("remote_login", str(body["login"]).strip().lower())
+    if "host" in body: db.set_setting("remote_host", str(body["host"]).strip().lower())
+    if "keep_awake" in body: db.set_setting("remote_keep_awake", bool(body["keep_awake"]))
+    if "enabled" in body:
+        if body["enabled"] and not (db.get_setting("remote_hash") and db.get_setting("remote_login")): bad("Set a passphrase and your Tailscale login before turning remote access on.")
+        db.set_setting("remote_enabled", bool(body["enabled"])); remote.log("turned on" if body["enabled"] else "turned off")
+        if not body["enabled"]: remote.revoke("all")
+    awake.sync()
+    return remote_status()
+
+@app.post("/api/remote/revoke")
+def remote_revoke(body: dict): remote.revoke(str(body.get("id", "all"))); return remote_status()
+
+@app.get("/api/remote/tailscale")
+def remote_tailscale(): return tailscale.info()
 
 # ---------- sessions & chat ----------
 import re
@@ -412,7 +493,7 @@ def backup(body: dict):
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     pw = body.get("passphrase", "")
     if len(pw) < 8: bad("Use a passphrase of at least 8 characters.")
-    data = _dump(True); data["settings"] = {k: v for k, v in db.all_settings(hide=()).items() if k not in db.SECRET + ("lock_enabled",)}
+    data = _dump(True); data["settings"] = {k: v for k, v in db.all_settings(hide=()).items() if k not in db.SECRET + ("lock_enabled",) and not k.startswith("remote_")}
     raw = gzip.compress(json.dumps(data).encode()); salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
     blob = b"SFBK1" + salt + nonce + AESGCM(_key(pw, salt)).encrypt(nonce, raw, b"SFBK1")
     return Response(blob, media_type="application/octet-stream", headers={"Content-Disposition": "attachment; filename=selfward-backup.sfbk"})
@@ -433,7 +514,7 @@ async def restore(request: Request):
                 if isinstance(r.get("vec"), str): r["vec"] = base64.b64decode(r["vec"])
                 c.execute(f"INSERT INTO {t}({','.join(r.keys())}) VALUES({','.join('?' * len(r))})", list(r.values()))
         for k, v in data.get("settings", {}).items():
-            if k in db.DEFAULTS and k not in db.SECRET: c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, json.dumps(v)))
+            if k in db.DEFAULTS and k not in db.SECRET and not k.startswith("remote_"): c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, json.dumps(v)))
     if "graph_nodes" not in data["tables"]: graph.rebuild()          # a backup from before the map existed
     if "dreams" not in data["tables"]: insights.rebuild()            # ... or before dreams and notes
     return {"restored": {t: len(r) for t, r in data["tables"].items()}}
