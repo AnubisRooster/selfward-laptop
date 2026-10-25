@@ -101,11 +101,19 @@ def join_background(timeout=30):
     for t in list(_background): t.join(timeout)
     _background[:] = [t for t in _background if t.is_alive()]
 
+def _who(session, persona=None):
+    """Which guide (and approach) is speaking, as it was when the reply was written."""
+    p = persona or personas.resolve(session["persona"])
+    return {"persona": p["kind"], "persona_name": p["display"], **({"modality": session["modality"]} if p["kind"] == "therapist" else {})}
+
 def _capture(session_id, user_text, earlier):
     """What your message adds besides the answer: the inner map, a dream record, the session's summary note. Never blocks the answer."""
     try:
-        graph.extract(session_id, user_text, [m["content"] for m in earlier if m["role"] == "user"])
-        return insights.capture(session_id, user_text)
+        nodes, edges = graph.extract(session_id, user_text, [m["content"] for m in earlier if m["role"] == "user"])
+        out = insights.capture(session_id, user_text)
+        if nodes: out["nodes"] = nodes
+        if edges: out["edges"] = edges
+        return out
     except Exception:
         return {}
 
@@ -127,22 +135,23 @@ def _turn(session_id, user_text):
             db.x("UPDATE messages SET content=? WHERE id=?", (acc, mid))
         stopped = session_id in _cancelled
         violation, pattern = safety.check_boundary(acc, persona["kind"])
-        meta = {"captured": captured} if captured else {}
-        meta["model"] = llm.current_model(session)             # which model wrote this reply (it can change mid-session)
+        meta = {"model": llm.current_model(session), **_who(session, persona)}      # who wrote this reply (the guide, approach and model can all change mid-session)
         if violation:
             _event(session_id, "boundary_violation", "warning", f"Detected pattern: '{pattern}'")
             acc = safety.BOUNDARY_REPLACEMENT; meta["safety"] = "boundary"
         if stopped: meta["cancelled"] = True
-        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (acc or ("(stopped)" if stopped else "(no answer)"), json.dumps(meta), mid))
         if acc and not stopped and not violation:
             try:
-                memory.remember(session_id, user_text, acc)
-                memory.promote(session_id, user_text, acc)
+                memory.remember(session_id, user_text, acc); captured["memory"] = 1
+                if memory.promote(session_id, user_text, acc): captured["insight"] = 1            # kept for good: shown as "insight saved"
             except Exception: pass
+        if captured: meta["captured"] = captured
+        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (acc or ("(stopped)" if stopped else "(no answer)"), json.dumps(meta), mid))
+        if acc and not stopped and not violation:
             t = threading.Thread(target=_refresh_recap, args=(session, earlier + [{"role": "user", "content": user_text}, {"role": "assistant", "content": acc}]), daemon=True)
             _background.append(t); t.start()
     except Exception as e:
-        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured, "model": llm.current_model(session)}), mid))
+        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured, "model": llm.current_model(session), **_who(session)}), mid))
     finally:
         _running.discard(session_id); _cancelled.discard(session_id)
         db.x("UPDATE sessions SET status='idle', updated=? WHERE id=?", (db.now(), session_id))

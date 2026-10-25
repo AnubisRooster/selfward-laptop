@@ -5,10 +5,11 @@ import { ago, del, errText, get, patch, post } from '../api';
 import { useLoad, useNav } from '../hooks';
 import { Badge, Btn, Card, Empty, Err, Field, Modal, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
+import { takeInsights } from '../insightsIntent';
 
 export default function Insights() {
   const { sessionId, go } = useNav();
-  const [tab, setTab] = useState('highlights');
+  const [tab, setTab] = useState(() => takeInsights() || 'highlights');
   const q = { session_id: sessionId ?? undefined };
   const { data: sessions } = useLoad<any[]>('/sessions');
   const ins = useLoad<any>('/insights', q);

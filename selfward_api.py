@@ -224,7 +224,9 @@ def _check_model(m):
 def _session_row(s):
     p = personas.resolve(s["persona"]); eff = s.get("model") or db.get_setting("model")
     last = db.q("SELECT content FROM messages WHERE session_id=? AND role='assistant' AND content!='' ORDER BY id DESC LIMIT 1", (s["id"],), one=True)
-    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff)}
+    n = lambda sql: db.q(sql, (s["id"],), one=True)["n"]
+    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff),
+            "message_count": n("SELECT COUNT(*) n FROM messages WHERE session_id=? AND content!=''"), "node_count": n("SELECT COUNT(*) n FROM graph_nodes WHERE session_id=?"), "memory_count": n("SELECT COUNT(*) n FROM memories WHERE session_id=?")}
 
 @app.get("/api/sessions")
 def sessions(archived: bool = False):

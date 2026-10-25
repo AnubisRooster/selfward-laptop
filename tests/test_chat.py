@@ -131,3 +131,35 @@ class ModelPerSession(unittest.TestCase):
         try: client.post(f"/api/sessions/{sid}/send", json={"text": "hello there friend"}); wait_idle(sid)
         finally: llm.stream = old
         last = client.get(f"/api/sessions/{sid}").json()["messages"][-1]; self.assertEqual(last["meta"]["model"], "openrouter/some/model:free"); self.assertTrue(last["meta"]["error"])
+
+
+class WhoSpoke(unittest.TestCase):
+    def setUp(self): reset()
+    def test_the_guide_and_approach_can_change_mid_session_and_each_reply_says_who_spoke(self):
+        sid = client.post("/api/sessions", json={"persona": "therapist", "modality": "cbt"}).json()["id"]
+        talk(sid, "first message here")
+        self.assertEqual(client.patch(f"/api/sessions/{sid}", json={"modality": "jungian"}).status_code, 200); talk(sid, "second message here")
+        self.assertEqual(client.patch(f"/api/sessions/{sid}", json={"persona": "companion"}).status_code, 200)
+        m = talk(sid, "third message here"); self.assertIn("You are Kai, an AI companion", m.calls[0][0]["content"]); self.assertEqual(m.calls[0][-2]["content"].strip(), "Tell me more.")      # the earlier turns come along
+        self.assertEqual(client.patch(f"/api/sessions/{sid}", json={"persona": "spiritual"}).status_code, 200); talk(sid, "fourth message here")
+        r = [x["meta"] for x in client.get(f"/api/sessions/{sid}").json()["messages"] if x["role"] == "assistant"]
+        self.assertEqual([(x["persona"], x["persona_name"], x.get("modality")) for x in r], [("therapist", "AI Reflection Guide", "cbt"), ("therapist", "AI Reflection Guide", "jungian"), ("companion", "Kai", None), ("spiritual", "Sage", None)])
+        s = client.get(f"/api/sessions/{sid}").json(); self.assertEqual((s["persona"], s["persona_name"]), ("spiritual", "Sage"))
+    def test_what_a_reply_caused_is_counted_for_the_badges(self):
+        sid = client.post("/api/sessions", json={}).json()["id"]; talk(sid, "Nothing much happened today")
+        c = client.get(f"/api/sessions/{sid}").json()["messages"][-1]["meta"]["captured"]; self.assertEqual(c, {"memory": 1})
+        talk(sid, "My mother called and I felt guilty and ashamed. I always mess up")
+        c = client.get(f"/api/sessions/{sid}").json()["messages"][-1]["meta"]["captured"]
+        self.assertEqual((c["nodes"], c["memory"]), (4, 1)); self.assertGreaterEqual(c["edges"], 4)           # Mother, Guilt, Shame, a belief
+        self.assertEqual(c["insight"], 1)                                                                                                       # a mother and shame are weighty enough to be kept for good
+        talk(sid, "I went to the market and bought plums"); self.assertNotIn("insight", client.get(f"/api/sessions/{sid}").json()["messages"][-1]["meta"]["captured"])
+        talk(sid, "My mother called and I felt guilty again")
+        self.assertNotIn("nodes", client.get(f"/api/sessions/{sid}").json()["messages"][-1]["meta"]["captured"])                              # nothing new on the map: no badge
+    def test_the_list_carries_the_counts_the_phone_shows(self):
+        sid = client.post("/api/sessions", json={}).json()["id"]; talk(sid, "My boss was cruel and I felt hurt")
+        row = client.get("/api/sessions").json()[0]; self.assertEqual((row["message_count"], row["node_count"], row["memory_count"]), (2, 2, 1))
+    def test_a_title_can_be_chosen_when_starting_and_changed_later(self):
+        sid = client.post("/api/sessions", json={"title": "Dealing with Dana"}).json()["id"]; talk(sid, "a first message about work")
+        self.assertEqual(client.get(f"/api/sessions/{sid}").json()["title"], "Dealing with Dana")                 # the first message does not overwrite a title you chose
+        client.patch(f"/api/sessions/{sid}", json={"title": "Work, again"}); self.assertEqual(client.get("/api/sessions").json()[0]["title"], "Work, again")
+        talk(sid, "another message"); self.assertEqual(client.get(f"/api/sessions/{sid}").json()["title"], "Work, again")

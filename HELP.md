@@ -71,6 +71,12 @@ Then press **+ New** on the Sessions page, pick a guide, and write.
 
 All three share the same memory. Their names and settings are in **Settings → Your guides**.
 
+**Changing things mid-session.** Under a session's title are three pills: the guide you are talking with, the approach (for the AI Reflection Guide) and the model. Press any of them to change it from your next message on. The conversation and everything remembered come along, and each earlier reply keeps the name, approach and model that wrote it. The guide's portrait next to the title opens the same picker.
+
+**Naming a session.** Give it a title when you start it (the box at the top of **+ New**), or press the pencil next to the title at any time. Without one, it is named from your first message; a title you choose is never overwritten.
+
+**The small pills under a reply** show what that exchange added: **memories** (it was remembered so a later session can recall it), **nodes** and **edges** (new things and connections on your Inner Map), **dream logged**, **note**, and **insight saved** (the moment carries weight, so it is kept for good). Press one to go to where it lives. The row of icons at the top right of a session opens that session's Insights, Notes, Dreams and Patterns (its Inner Map). In the list, each session shows its guide's portrait, approach, model, message count, and the number of map nodes and memories.
+
 ## Choosing the model
 
 Open **Settings → Model**.

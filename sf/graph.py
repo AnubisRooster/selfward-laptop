@@ -77,26 +77,27 @@ def _node(session_id, label):
     return db.q("SELECT * FROM graph_nodes WHERE session_id=? AND lower(label)=lower(?)", (session_id, label), one=True)
 
 def _add_node(session_id, type_, label):
+    """Adds the thing, or makes an existing one stronger. Returns True when it is new to this session."""
     n = _node(session_id, label)
     if n:
-        db.x("UPDATE graph_nodes SET strength=? WHERE id=?", (min(n["strength"] + 0.5, MAX_STRENGTH), n["id"])); return n["id"]
-    return db.x("INSERT INTO graph_nodes(session_id,type,label,strength,ts) VALUES(?,?,?,1.0,?)", (session_id, type_, label, db.now()))
+        db.x("UPDATE graph_nodes SET strength=? WHERE id=?", (min(n["strength"] + 0.5, MAX_STRENGTH), n["id"])); return False
+    db.x("INSERT INTO graph_nodes(session_id,type,label,strength,ts) VALUES(?,?,?,1.0,?)", (session_id, type_, label, db.now())); return True
 
 def _add_edge(session_id, src_label, tgt_label, type_):
     a, b = _node(session_id, src_label), _node(session_id, tgt_label)
-    if not a or not b or a["id"] == b["id"]: return
+    if not a or not b or a["id"] == b["id"]: return False
     e = db.q("SELECT * FROM graph_edges WHERE session_id=? AND source=? AND target=? AND type=?", (session_id, a["id"], b["id"], type_), one=True)
-    if e: db.x("UPDATE graph_edges SET weight=? WHERE id=?", (min(e["weight"] + 0.5, MAX_STRENGTH), e["id"]))
-    else: db.x("INSERT INTO graph_edges(session_id,source,target,type,weight,ts) VALUES(?,?,?,?,1.0,?)", (session_id, a["id"], b["id"], type_, db.now()))
+    if e: db.x("UPDATE graph_edges SET weight=? WHERE id=?", (min(e["weight"] + 0.5, MAX_STRENGTH), e["id"])); return False
+    db.x("INSERT INTO graph_edges(session_id,source,target,type,weight,ts) VALUES(?,?,?,?,1.0,?)", (session_id, a["id"], b["id"], type_, db.now())); return True
 
 def extract(session_id, message, recent_messages=()):
-    """Adds what `message` brings up to this session's map. Returns how many nodes it touched."""
-    nodes, edges = analyze(message)
-    for t, label in nodes: _add_node(session_id, t, label)
-    for s, t, ty in edges: _add_edge(session_id, s, t, ty)
+    """Adds what `message` brings up to this session's map. Returns (new things, new connections), for the badges under a reply."""
+    nodes, edges = analyze(message); new_nodes = new_edges = 0
+    for t, label in nodes: new_nodes += _add_node(session_id, t, label)
+    for s, t, ty in edges: new_edges += _add_edge(session_id, s, t, ty)
     recent = [n for m in list(recent_messages)[-RECENT_WINDOW:] for n in analyze(m)[0]]
-    for s, t, ty in cross_edges(nodes, recent): _add_edge(session_id, s, t, ty)
-    return len(nodes)
+    for s, t, ty in cross_edges(nodes, recent): new_edges += _add_edge(session_id, s, t, ty)
+    return new_nodes, new_edges
 
 def rebuild():
     """Clears the map and rebuilds it from every session's own messages (skipping ones answered by the crisis screen)."""
