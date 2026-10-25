@@ -9,6 +9,7 @@ import { useHandsFree } from '../useHandsFree';
 import { plainForSpeech } from '../voiceInput';
 import { wantAudioChat } from '../voiceIntent';
 import { wantInsights } from '../insightsIntent';
+import { touch } from '../activity';
 import { BADGE_ICONS, BadgePill, ModalityIcon, PersonaAvatar } from '../icons';
 import { Archive, Brain, ChevronDown, Cloud, Cpu, Hexagon, Lightbulb, Mic, MicOff, Moon, NotebookPen, Pencil, Square, Trash2, Volume2 } from 'lucide-react';
 
@@ -169,6 +170,7 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [n, last]);
   useEffect(() => { setText(''); setErr(''); box.current?.focus(); }, [id]);
   useEffect(() => { if (!running) box.current?.focus(); }, [running]);
+  useEffect(() => { if (!running) return; touch(); const t = setInterval(touch, 5000); return () => clearInterval(t); }, [running]);       // waiting for an answer is use
   const sendText = async (t: string) => {
     t = t.trim(); if (!t) return;
     setSending(true); setErr('');

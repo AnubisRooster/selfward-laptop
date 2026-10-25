@@ -119,7 +119,7 @@ Selfward finds `~/SmartWardApp` by itself, or the folder named in the `SELFWARD_
 ## Your data and privacy
 
 - Everything is in one database: `~/.local/share/selfward/selfward.db` (owner-only permissions). Logs: `~/.local/state/selfward/api.log`.
-- **Settings → Privacy & lock**: set a PIN to lock the window (it protects the screen, not the file on disk). After five wrong PINs it makes you wait.
+- **Settings → Privacy & lock**: set a PIN to lock the window (it protects the screen, not the file on disk). After five wrong PINs it makes you wait. It locks when you leave the window for a while (default 60 seconds: minimised or on another workspace) and after a spell with no activity (default 15 minutes; set 0 to never lock for inactivity). Typing, clicking, scrolling, moving the mouse, hands-free talking and waiting for an answer all count as activity, so it does not lock while you are using it.
 - **Settings → Your data**: export as Markdown or JSON, make an **encrypted backup** (needs a passphrase of 8+ characters; keep it, it cannot be recovered), restore one, or **erase everything**. Backups leave out your API key, PIN and remote-access settings.
 - **Settings → What Selfward remembers**: see, add to, forget, or switch off the memories kept across sessions.
 - Deleting a session also deletes its messages, notes, dreams, graph and memories. A Narrative already written from it is not edited; edit or delete it on its page.
@@ -178,6 +178,7 @@ Then quit Selfward from its tray icon and open it again. An open window that was
 
 | What you see | What to do |
 | --- | --- |
+| It locks while I'm using it | Settings → Privacy & lock: raise **Lock after no activity** (or set it to 0) and **Lock when I leave the window**. Reading without touching anything still counts as idle after that time. |
 | "Ollama isn't running" banner | Start it: `ollama serve` (or `sudo systemctl start ollama`). |
 | "That model isn't installed" | `ollama pull llama3.2:3b` (or choose another model in Settings). |
 | Replies are very slow | A larger model or a long chat takes minutes on a CPU. Try the 3B model, a shorter chat, or a free OpenRouter model. |

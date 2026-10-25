@@ -5,6 +5,7 @@ import { onPhone } from './device';
 import { encodeWav } from './wav';
 import { speech, useSpeech } from './hooks';
 import { toast } from './feedback';
+import { touch } from './activity';
 import { parseVoice, plainForSpeech } from './voiceInput';
 import { takeAudioChat } from './voiceIntent';
 
@@ -60,7 +61,7 @@ export function useHandsFree(a: Args) {
     })();
     const timer = setInterval(async () => {
       try {
-        const r = await get('/voice/poll', { after: cursor.current });
+        const r = await get('/voice/poll', { after: cursor.current }); touch();       // listening is use
         if (!alive) return;
         cursor.current = r.seq; setServer(r.ready ? r.state : 'loading');
         if (r.error) { setError(r.error); setOn(false); return; }
@@ -105,6 +106,8 @@ export function useHandsFree(a: Args) {
     const last = a.messages[a.messages.length - 1];
     if (last?.role === 'assistant' && last.meta?.safety && last.content) { voiceTurn.current = false; speech.speak(plainForSpeech(last.content), 1, '', a.persona); }
   }, [a.messages.length, on]);
+
+  useEffect(() => { if (!on || !onPhone) return; const t = setInterval(touch, 5000); return () => clearInterval(t); }, [on]);       // the phone's microphone has no poll to count
 
   const status: HandsFreeStatus = !on ? 'off' : sp.on ? 'speaking' : a.running || busy ? 'thinking' : server === 'loading' ? 'loading' : server === 'hearing' ? 'hearing' : 'listening';
   return { on, status, error, toggle: () => { if (on) turnOff(); else { speech.unlock(); setError(''); get('/settings').then(st => { if (Number.isFinite(st?.voice_pause_ms)) pauseMs.current = st.voice_pause_ms; }).catch(() => {}).finally(() => setOn(true)); } }, turnOff };

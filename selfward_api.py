@@ -78,6 +78,9 @@ def put_settings(body: dict):
         if k.startswith("tts_") or k.startswith("voice_"):
             try: tts.validate_setting(k, v, body.get("values"))
             except ValueError as e: bad(str(e))
+        if k in ("lock_after", "lock_idle"):
+            lo, hi = (10, 86400) if k == "lock_after" else (0, 1440)
+            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi: bad(f"Use a whole number from {lo} to {hi}.")
         if k == "context_tokens":
             try: v = int(v)
             except (TypeError, ValueError): bad("The window must be a number of tokens.")

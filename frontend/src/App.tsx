@@ -8,6 +8,7 @@ import { onDesktopEvent } from './desktop';
 import { onPhone } from './device';
 import RemoteSignIn from './RemoteSignIn';
 import { HelpHost } from './HelpGuide';
+import { idleFor, shouldLock, watchActivity } from './activity';
 import { reloadForUpdate } from './ErrorBoundary';
 import Onboarding from './views/Onboarding';
 // A view that can't be fetched means this window predates the installed build: reload to pick the new one up.
@@ -62,7 +63,6 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [needSignIn, setNeedSignIn] = useState(false);
   useEffect(() => { const f = () => setNeedSignIn(true); window.addEventListener('sf-remote-auth', f); return () => window.removeEventListener('sf-remote-auth', f); }, []);
-  const idle = useRef<any>(null);
   const firstBuild = useRef<number | null>(null);
   useEffect(() => { if (st?.ui_build == null) return; if (firstBuild.current == null) firstBuild.current = st.ui_build; }, [st?.ui_build]);
   const stale = st?.ui_build != null && firstBuild.current != null && st.ui_build !== firstBuild.current;
@@ -76,18 +76,23 @@ export default function App() {
     return () => off();
   }, [lockOn]);
 
-  // Lock on launch, after the grace period away, and after a long idle spell.
+  // Lock on launch, after the grace period away (the window hidden), and after a long idle spell. Idle means no keys, clicks, scrolling or mouse movement,
+  // no hands-free listening or speaking, and no answer being written (those call touch() in activity.ts), so it never locks while you are using it.
   useEffect(() => {
     if (!lockOn) return;
-    let hiddenAt = 0;
-    const lockAfter = async () => { const s = await get('/settings'); return (s.lock_after ?? 60) * 1000; };
-    const onVis = async () => {
+    let hiddenAt = 0; let cfg = { away: 60_000, idle: 15 };
+    const load = () => get('/settings').then(s => { cfg = { away: (s.lock_after ?? 60) * 1000, idle: s.lock_idle ?? 15 }; }).catch(() => {});
+    load();
+    const onVis = () => {
       if (document.hidden) hiddenAt = Date.now();
-      else if (hiddenAt && Date.now() - hiddenAt > await lockAfter()) lockNow();
+      else if (hiddenAt && Date.now() - hiddenAt > cfg.away) lockNow();
+      if (!document.hidden) hiddenAt = 0;
     };
-    const reset = () => { clearTimeout(idle.current); lockAfter().then(ms => { idle.current = setTimeout(lockNow, Math.max(ms, 60000) * 5); }); };
-    document.addEventListener('visibilitychange', onVis); window.addEventListener('pointerdown', reset); window.addEventListener('keydown', reset); reset();
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pointerdown', reset); window.removeEventListener('keydown', reset); clearTimeout(idle.current); };
+    const stop = watchActivity();
+    const tick = setInterval(() => { if (!document.hidden && shouldLock(idleFor(), cfg.idle)) lockNow(); }, 5000);
+    const refresh = setInterval(load, 30_000);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); clearInterval(tick); clearInterval(refresh); document.removeEventListener('visibilitychange', onVis); };
   }, [lockOn]);
 
   if (needSignIn) return <RemoteSignIn onDone={() => { setNeedSignIn(false); reload(); }} />;

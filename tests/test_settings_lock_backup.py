@@ -61,3 +61,15 @@ class Backup(unittest.TestCase):
         self.assertIn("Export me", client.get("/api/export/markdown").text); self.assertEqual(len(client.get("/api/export/json").json()["tables"]["messages"]), 2)
 
 if __name__ == "__main__": unittest.main()
+
+
+class LockTimers(unittest.TestCase):
+    def setUp(self): reset()
+    def test_away_and_idle_are_separate_validated_numbers_with_a_calmer_idle_default(self):
+        s = client.get("/api/settings").json(); self.assertEqual((s["lock_after"], s["lock_idle"]), (60, 15))
+        for bad in ({"lock_after": 5}, {"lock_after": 90000}, {"lock_idle": -1}, {"lock_idle": 5000}, {"lock_idle": "10"}, {"lock_idle": True}, {"lock_after": 30.5}):
+            self.assertEqual(client.put("/api/settings", json={"values": bad}).status_code, 400, bad)
+        self.assertEqual(client.put("/api/settings", json={"values": {"lock_after": 120, "lock_idle": 0}}).status_code, 200)
+        s = client.get("/api/settings").json(); self.assertEqual((s["lock_after"], s["lock_idle"]), (120, 0))
+    def test_a_backup_does_not_carry_the_lock_state_but_the_timers_may(self):
+        client.put("/api/settings", json={"values": {"lock_idle": 30}}); self.assertEqual(client.get("/api/settings").json()["lock_idle"], 30)

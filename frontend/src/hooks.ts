@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { get, http } from './api';
 import { HOME, Place, Tab, hashFor, parseHash } from './nav';
+import { touch } from './activity';
 
 export type { Tab } from './nav';
 
@@ -89,7 +90,7 @@ export const speech = {
   listeners: new Set<() => void>(),
   token: 0, flat: [] as { part: number; text: string }[], cursor: 0,
   audio: null as HTMLAudioElement | null, el: null as HTMLAudioElement | null, clips: new Map<number, Promise<string>>(), aborts: new Set<AbortController>(), cfg: null as SpeechConfig | null,
-  notify() { speech.listeners.forEach(f => f()); },
+  notify() { if (speech.on) touch(); speech.listeners.forEach(f => f()); },
   /** One audio element for the whole session. Phones only let an element play after a tap has "unlocked" it, so a new element per clip would be blocked. */
   element(): HTMLAudioElement { if (!speech.el) speech.el = new Audio(); return speech.el; },
   /** Call from a tap or click (the hands-free switch): lets later spoken answers play on a phone. */

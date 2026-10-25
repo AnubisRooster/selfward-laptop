@@ -77,7 +77,7 @@ DEFAULTS = {
     "embed_model": "nomic-embed-text",
     "ollama_base": os.environ.get("OLLAMA_API_BASE", "http://localhost:11434"),
     "api_key": "", "onboarding_completed": False, "disclaimer_accepted": False,
-    "lock_enabled": False, "lock_after": 60, "lock_hash": "",
+    "lock_enabled": False, "lock_after": 60, "lock_idle": 15, "lock_hash": "",
     "default_persona": "therapist", "default_modality": "integrated", "region": "US",
     "therapist_name": "", "companion_name": "Kai", "spiritual_name": "Sage",
     "companion_personality": "warm", "companion_gender": "unspecified", "spiritual_tradition": "interfaith",

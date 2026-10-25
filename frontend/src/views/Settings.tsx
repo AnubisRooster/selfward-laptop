@@ -122,7 +122,9 @@ export default function Settings() {
           <Field label={v.lock_enabled ? 'New PIN' : 'PIN (4+ digits)'}><input type="password" inputMode="numeric" className={inputCls + ' !w-32'} value={pin.next} onChange={e => setPin(p => ({ ...p, next: e.target.value }))} /></Field>
           <Btn kind="primary" disabled={pin.next.length < 4} onClick={() => setPinNow()}>{v.lock_enabled ? 'Change PIN' : 'Set PIN'}</Btn>
           {v.lock_enabled && <Btn kind="danger" onClick={() => setPinNow(true)}>Remove PIN</Btn>}</div>
-        {v.lock_enabled && <Field label="Lock after being away (seconds)"><input type="number" min={10} className={inputCls + ' !w-32'} value={v.lock_after} onChange={e => setKey('lock_after', Number(e.target.value))} onBlur={() => save(['lock_after'])} /></Field>}
+        {v.lock_enabled && <div className="flex flex-wrap gap-4">
+          <Field label="Lock when I leave the window for (seconds)" hint="Minimised, or on another workspace."><input type="number" min={10} max={86400} className={inputCls + ' !w-32'} value={v.lock_after} onChange={e => setKey('lock_after', Number(e.target.value))} onBlur={() => save(['lock_after'])} /></Field>
+          <Field label="Lock after no activity for (minutes)" hint="0 never locks for inactivity. Typing, clicking, scrolling, moving the mouse, hands-free talking and waiting for an answer all count as activity."><input type="number" min={0} max={1440} className={inputCls + ' !w-32'} value={v.lock_idle} onChange={e => setKey('lock_idle', Number(e.target.value))} onBlur={() => save(['lock_idle'])} /></Field></div>}
       </Card>
 
       <Card className="space-y-3"><h2 className="font-medium">Your data</h2>
