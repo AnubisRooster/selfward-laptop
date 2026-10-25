@@ -131,11 +131,12 @@ def _turn(session_id, user_text):
     try:
         earlier = db.q("SELECT role,content,ts FROM messages WHERE session_id=? AND id<? AND role IN ('user','assistant') AND content!='' ORDER BY id", (session_id, mid))
         earlier = earlier[:-1] if earlier and earlier[-1]["role"] == "user" and earlier[-1]["content"] == user_text else earlier   # this turn's own message is added last
-        captured = _capture(session_id, user_text, earlier)       # from your words alone, so it happens even if the model is down
+        extra, warmth = companion.addendum(session, user_text) if session["persona"] == "companion" else ("", {})        # the companion's warmth dial for this turn
+        private = warmth.get("flirt", 0) > 0                     # warm chats leave nothing behind: no map, memories, dreams, notes or tagging
+        captured = {} if private else _capture(session_id, user_text, earlier)       # from your words alone, so it happens even if the model is down
         memories = memory.recall(user_text, exclude_session=session_id)
         important = memory.recall_global(user_text, exclude_session=session_id)
         memories = [m for m in memories if m not in important]          # said once, under the stronger heading
-        extra, warmth = companion.addendum(session, user_text) if session["persona"] == "companion" else ("", {})        # the companion's warmth dial for this turn
         session = {**session, "_extra": extra}
         msgs, persona = fit(session, earlier, user_text, memories, important)
         acc = ""
@@ -150,7 +151,7 @@ def _turn(session_id, user_text):
             _event(session_id, "boundary_violation", "warning", f"Detected pattern: '{pattern}'")
             acc = safety.BOUNDARY_REPLACEMENT; meta["safety"] = "boundary"
         if warmth and not violation:
-            meta["flirt"] = warmth["flirt"]
+            meta["flirt"] = warmth["flirt"]; meta["private"] = True
             if warmth.get("tone_dropped"): meta["tone_dropped"] = True
             if warmth.get("time_check"): meta["time_check"] = True
             kind, phrase = companion.reply_problem(acc)
@@ -160,14 +161,14 @@ def _turn(session_id, user_text):
                 meta["safety"] = "companion_" + kind; meta.pop("time_check", None); violation = True
             elif companion.looks_like_refusal(acc): meta["refused"] = True        # the model stepped out of the role; the page says so
         if stopped: meta["cancelled"] = True
-        if acc and not stopped and not violation:
+        if acc and not stopped and not violation and not private:
             try:
                 memory.remember(session_id, user_text, acc); captured["memory"] = 1
                 if memory.promote(session_id, user_text, acc): captured["insight"] = 1            # kept for good: shown as "insight saved"
             except Exception: pass
         if captured: meta["captured"] = captured
         db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (acc or ("(stopped)" if stopped else "(no answer)"), json.dumps(meta), mid))
-        if tagging.enabled() and not stopped:                  # an optional second look by the model on this computer, after the answer (see sf/tagging.py)
+        if tagging.enabled() and not stopped and not private:                  # an optional second look by the model on this computer, after the answer (see sf/tagging.py)
             user_row = db.q("SELECT id FROM messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1", (session_id,), one=True)
             t = threading.Thread(target=_second_look, args=(session_id, user_text, mid, user_row["id"] if user_row else None), daemon=True); _background.append(t); t.start()
         if acc and not stopped and not violation:

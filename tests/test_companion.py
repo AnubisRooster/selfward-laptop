@@ -67,8 +67,18 @@ class Dial(unittest.TestCase):
         sid = companion_session(2); talk(sid, "hi"); db.x("UPDATE messages SET ts=ts-7300 WHERE session_id=?", (sid,))
         client.put("/api/settings", json={"values": {"companion_time_check": False}}); m = talk(sid, "again"); self.assertNotIn("hours", m.calls[0][0]["content"])
     def test_people_from_the_inner_map_are_named(self):
-        sid = companion_session(2); talk(sid, "my sister Ana called me"); m = talk(sid, "hello again")
+        old = client.post("/api/sessions", json={"persona": "therapist"}).json()["id"]; talk(old, "my sister Ana called me")
+        sid = companion_session(2); m = talk(sid, "hello again")
         self.assertIn("People in their life", m.calls[0][0]["content"])
+    def test_warm_chats_leave_nothing_behind(self):
+        sid = companion_session(2)
+        talk(sid, "I had a dream about my mother and I feel anxious and ashamed. I always fail.", "I'm here.")
+        talk(sid, "my partner Sam left me and I feel so lonely", "Oh love.")
+        for t in ("graph_nodes", "graph_edges", "memories", "global_memories", "dreams", "notes"):
+            self.assertEqual(db.q(f"SELECT COUNT(*) n FROM {t}", one=True)["n"], 0, t)
+        r = last(sid); self.assertTrue(r["meta"]["private"]); self.assertNotIn("captured", r["meta"])
+        client.patch(f"/api/sessions/{sid}", json={"flirt": 0}); talk(sid, "my mother makes me feel anxious")        # back to plain: it is captured again
+        self.assertGreater(db.q("SELECT COUNT(*) n FROM graph_nodes", one=True)["n"], 0)
     def test_crisis_check_still_comes_first(self):
         sid = companion_session(3); m = talk(sid, "I want to kill myself"); self.assertEqual(m.calls, [])
     def test_catalog_lists_the_four_levels(self):
