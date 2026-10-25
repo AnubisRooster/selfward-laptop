@@ -1,6 +1,6 @@
 import unittest
 from tests.helpers import client, reset, db, chat, FakeModel, wait_idle
-from sf import personas, memory
+from sf import llm, personas, memory
 from sf.prompts import MODALITY_PROMPTS, ALL_MODALITIES
 
 def talk(sid, text, reply="Tell me more."):
@@ -91,3 +91,43 @@ class Sessions(unittest.TestCase):
         self.assertEqual(client.get("/api/sessions").json(), []); self.assertEqual(len(client.get("/api/sessions?archived=true").json()), 1)
 
 if __name__ == "__main__": unittest.main()
+
+
+class ModelPerSession(unittest.TestCase):
+    def setUp(self): reset()
+    def test_the_model_can_change_mid_session_and_each_reply_says_which_wrote_it(self):
+        sid = client.post("/api/sessions", json={}).json()["id"]; used = []
+        old = llm.stream
+        def fake(messages, model=None, temperature=0.6): used.append(model); yield "ok "
+        llm.stream = fake
+        try:
+            from tests.helpers import wait_idle
+            client.post(f"/api/sessions/{sid}/send", json={"text": "first message here"}); wait_idle(sid)
+            self.assertEqual(client.patch(f"/api/sessions/{sid}", json={"model": "openrouter/openrouter/free"}).status_code, 200)
+            s = client.get(f"/api/sessions/{sid}").json(); self.assertEqual((s["model"], s["model_effective"], s["model_is_local"]), ("openrouter/openrouter/free", "openrouter/openrouter/free", False))
+            client.post(f"/api/sessions/{sid}/send", json={"text": "second message here"}); wait_idle(sid)
+            client.patch(f"/api/sessions/{sid}", json={"model": ""})                                    # back to following the default
+            s = client.get(f"/api/sessions/{sid}").json(); self.assertEqual((s["model"], s["model_effective"], s["model_is_local"]), ("", "ollama_chat/llama3.2:3b", True))
+            client.post(f"/api/sessions/{sid}/send", json={"text": "third message here"}); wait_idle(sid)
+        finally: llm.stream = old
+        self.assertEqual(used, ["ollama_chat/llama3.2:3b", "openrouter/openrouter/free", "ollama_chat/llama3.2:3b"])
+        replies = [m["meta"]["model"] for m in client.get(f"/api/sessions/{sid}").json()["messages"] if m["role"] == "assistant"]
+        self.assertEqual(replies, used)
+    def test_the_default_setting_is_followed_until_the_session_has_its_own(self):
+        a = client.post("/api/sessions", json={}).json()["id"]; client.put("/api/settings", json={"values": {"model": "ollama_chat/qwen2.5:7b"}})
+        self.assertEqual(client.get(f"/api/sessions/{a}").json()["model_effective"], "ollama_chat/qwen2.5:7b")
+        client.patch(f"/api/sessions/{a}", json={"model": "ollama_chat/llama3.2:3b"}); client.put("/api/settings", json={"values": {"model": "ollama_chat/other"}})
+        self.assertEqual(client.get(f"/api/sessions/{a}").json()["model_effective"], "ollama_chat/llama3.2:3b")
+    def test_nonsense_model_ids_are_refused(self):
+        sid = client.post("/api/sessions", json={}).json()["id"]
+        for bad_id in ("rm -rf /", "a" * 201, "x;y", "model with spaces", 5):
+            self.assertEqual(client.patch(f"/api/sessions/{sid}", json={"model": bad_id}).status_code, 400, bad_id)
+        self.assertEqual(client.post("/api/sessions", json={"model": "x y"}).status_code, 400)
+    def test_a_failed_reply_still_says_which_model_failed(self):
+        from tests.helpers import wait_idle
+        sid = client.post("/api/sessions", json={"model": "openrouter/some/model:free"}).json()["id"]; old = llm.stream
+        def boom(*a, **k): raise Exception("401 invalid key"); yield
+        llm.stream = boom
+        try: client.post(f"/api/sessions/{sid}/send", json={"text": "hello there friend"}); wait_idle(sid)
+        finally: llm.stream = old
+        last = client.get(f"/api/sessions/{sid}").json()["messages"][-1]; self.assertEqual(last["meta"]["model"], "openrouter/some/model:free"); self.assertTrue(last["meta"]["error"])

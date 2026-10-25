@@ -128,6 +128,7 @@ def _turn(session_id, user_text):
         stopped = session_id in _cancelled
         violation, pattern = safety.check_boundary(acc, persona["kind"])
         meta = {"captured": captured} if captured else {}
+        meta["model"] = llm.current_model(session)             # which model wrote this reply (it can change mid-session)
         if violation:
             _event(session_id, "boundary_violation", "warning", f"Detected pattern: '{pattern}'")
             acc = safety.BOUNDARY_REPLACEMENT; meta["safety"] = "boundary"
@@ -141,7 +142,7 @@ def _turn(session_id, user_text):
             t = threading.Thread(target=_refresh_recap, args=(session, earlier + [{"role": "user", "content": user_text}, {"role": "assistant", "content": acc}]), daemon=True)
             _background.append(t); t.start()
     except Exception as e:
-        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured}), mid))
+        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured, "model": llm.current_model(session)}), mid))
     finally:
         _running.discard(session_id); _cancelled.discard(session_id)
         db.x("UPDATE sessions SET status='idle', updated=? WHERE id=?", (db.now(), session_id))

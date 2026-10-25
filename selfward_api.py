@@ -125,10 +125,18 @@ def voice_poll(after: int = 0): return stt.poll(after)
 def _close_microphone(): stt.stop()
 
 # ---------- sessions & chat ----------
+import re
+MODEL_RE = re.compile(r"^[A-Za-z0-9_\-./:@+]{1,200}$")
+def _check_model(m):
+    """A model id such as ollama_chat/llama3.2:3b or openrouter/openrouter/free; empty means 'follow the default in Settings'."""
+    if m in (None, ""): return ""
+    if not isinstance(m, str) or not MODEL_RE.match(m): bad("That doesn't look like a model id (for example ollama_chat/llama3.2:3b).")
+    return m
+
 def _session_row(s):
-    p = personas.resolve(s["persona"])
+    p = personas.resolve(s["persona"]); eff = s.get("model") or db.get_setting("model")
     last = db.q("SELECT content FROM messages WHERE session_id=? AND role='assistant' AND content!='' ORDER BY id DESC LIMIT 1", (s["id"],), one=True)
-    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120]}
+    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff)}
 
 @app.get("/api/sessions")
 def sessions(archived: bool = False):
@@ -137,7 +145,7 @@ def sessions(archived: bool = False):
 @app.post("/api/sessions")
 def session_new(body: dict):
     sid = chat.new_session(body.get("persona"), body.get("modality"), body.get("title"))
-    if body.get("model"): db.x("UPDATE sessions SET model=? WHERE id=?", (str(body["model"]), sid))
+    if body.get("model"): db.x("UPDATE sessions SET model=? WHERE id=?", (_check_model(body["model"]), sid))
     return {"id": sid, "preflight": preflight()}
 
 @app.get("/api/sessions/{sid}")
@@ -154,6 +162,7 @@ def session_patch(sid: int, body: dict):
         if k not in body: continue
         if k == "persona" and body[k] not in personas.KINDS: bad("Unknown persona.")
         if k == "modality" and body[k] not in ALL_MODALITIES: bad("Unknown approach.")
+        if k == "model": body[k] = _check_model(body[k])
         db.x(f"UPDATE sessions SET {k}=? WHERE id=?", (int(body[k]) if k == "archived" else body[k], sid))
     return {"ok": True}
 
