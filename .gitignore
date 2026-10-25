@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.log
+# Built UI served by the API (rebuild with scripts/build_ui.sh)
+ui/
+# The native window binary
+resources/selfward-ui-bin/
+frontend/node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+frontend/src-tauri/gen/

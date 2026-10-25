@@ -1,0 +1,9 @@
+# Python packages the API needs (the versions SmartWard was last tested with).
+# Install: python3 -m pip install --break-system-packages -r requirements.txt
+litellm==1.106.2
+pydantic==2.14.1
+fastapi==0.162.0
+uvicorn==0.54.0
+cryptography==46.0.5
+numpy==2.5.4
+httpx==0.28.1
