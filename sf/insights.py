@@ -4,11 +4,8 @@ Ported from the iPhone app (InsightCaptureService, DreamService, NoteService, In
 session summary are keyword rules and counts, so they need no model. Only "Interpret" asks the model, and only when you press it."""
 import json, re, time
 from . import db, graph, llm, safety
-from .graph import EMOTIONS, CANON
+from . import rules
 
-DREAM_CUES = ["i had a dream", "i dreamt", "i dreamed", "in my dream", "last night i dreamed", "last night i dreamt", "this dream", "a dream where",
-              "dream where", "nightmare", "had a nightmare", "dreaming about", "i was dreaming"]
-DREAM_FEELINGS = EMOTIONS + ["terrified", "panic", "dread", "peaceful", "joyful", "excited", "relieved"]
 SYMBOLS = ["water", "house", "forest", "animal", "flight", "falling", "chase", "death", "birth", "marriage", "child", "snake", "bird", "fire",
            "mountain", "ocean", "door", "window", "bridge", "shadow", "light", "car", "road", "monster", "darkness", "blood", "teeth", "train",
            "storm", "cave", "tower", "garden", "stairs", "school", "hospital"]
@@ -17,14 +14,10 @@ def _has(low, w, plural=False): return re.search(r"(?<![a-z])" + re.escape(w) + 
 def _norm(t): return " ".join((t or "").lower().replace("’", "'").split())
 
 def detect_dream(text):
-    """(feelings, symbols) when the message tells a dream, else None."""
+    """(feelings, symbols) when the message tells a dream, else None. The wording rules are in sf/rules.py."""
+    if not rules.looks_like_a_dream(text): return None
     low = _norm(text)
-    if not any(c in low for c in DREAM_CUES): return None
-    feelings = []
-    for w in DREAM_FEELINGS:
-        label = CANON.get(w, w).lower()
-        if _has(low, w) and label not in feelings: feelings.append(label)
-    return feelings, [w for w in SYMBOLS if _has(low, w, True)]    # dream things come in plurals: doors, snakes
+    return [f.lower() for f in rules.feelings_in(text)], [w for w in SYMBOLS if _has(low, w, True)]
 
 def add_dream(session_id, narrative, feelings=(), symbols=()):
     return db.x("INSERT INTO dreams(session_id,narrative,feelings,symbols,ts) VALUES(?,?,?,?,?)", (session_id, narrative, json.dumps(list(feelings)), json.dumps(list(symbols)), db.now()))

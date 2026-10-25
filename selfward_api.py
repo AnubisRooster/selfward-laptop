@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import awake, db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, remote, safety, stt, tailscale, tts
+from sf import awake, db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, remote, rules, safety, tagging, stt, tailscale, tts
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -78,6 +78,8 @@ def put_settings(body: dict):
         if k.startswith("tts_") or k.startswith("voice_"):
             try: tts.validate_setting(k, v, body.get("values"))
             except ValueError as e: bad(str(e))
+        if k == "tagging_model" and v and (not isinstance(v, str) or not llm.is_local(v)): bad("The model that looks more closely must be one on this computer (an Ollama model).")
+        if k == "tag_with_model" and not isinstance(v, bool): bad("That is a yes or no setting.")
         if k in ("lock_after", "lock_idle"):
             lo, hi = (10, 86400) if k == "lock_after" else (0, 1440)
             if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi: bad(f"Use a whole number from {lo} to {hi}.")
@@ -298,6 +300,21 @@ def graph_node(type: str, label: str, session_id: int = None):
     if not d: bad("That isn't on the map (any more).", 404)
     return d
 
+@app.get("/api/graph/enrich")
+def graph_enrich_status():
+    model = tagging.local_model(); pre = preflight(); name = model.split("/")[-1]
+    installed = pre["ollama"] and (name in pre["models"] or any(n.split(":")[0] == name.split(":")[0] and ":" not in name for n in pre["models"]))
+    return {**{k: tagging.STATE[k] for k in ("running", "done", "total", "error")}, "pending": len(tagging.pending()), "model": model, "enabled": tagging.enabled(), "ollama": pre["ollama"], "installed": bool(installed)}
+
+@app.post("/api/graph/enrich")
+def graph_enrich():
+    """Looks through what you have already written with the model on this computer (never a cloud one). Safe to run again: it skips messages it has seen."""
+    st = graph_enrich_status()
+    if not st["ollama"]: bad("Ollama isn't running, so the model on this computer can't look yet.", 409)
+    if not st["installed"]: bad(f"The model {st['model'].split('/')[-1]} isn't installed on this computer. Install it with: ollama pull {st['model'].split('/')[-1]}", 409)
+    if not tagging.start_enrich(): bad("It is already looking.", 409)
+    return graph_enrich_status()
+
 @app.post("/api/graph/rebuild")
 def graph_rebuild(): return {"messages": graph.rebuild()}
 
@@ -382,10 +399,7 @@ def dream_new(body: dict):
     sid = body.get("session_id")
     if sid is not None and not db.q("SELECT id FROM sessions WHERE id=?", (sid,), one=True): bad("No such session.", 404)
     low = insights._norm(text)
-    feelings = [CANON_LABEL(w) for w in insights.DREAM_FEELINGS if insights._has(low, w)]
-    return {"id": insights.add_dream(sid, text, list(dict.fromkeys(feelings)), [w for w in insights.SYMBOLS if insights._has(low, w, True)])}
-
-def CANON_LABEL(w): return insights.CANON.get(w, w).lower()
+    return {"id": insights.add_dream(sid, text, [f.lower() for f in rules.feelings_in(text)], [w for w in insights.SYMBOLS if insights._has(low, w, True)])}
 
 @app.post("/api/dreams/{did}/interpret")
 def dream_interpret(did: int):

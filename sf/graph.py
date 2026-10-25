@@ -5,22 +5,7 @@ nothing is sent anywhere. Nodes belong to a session; the map across sessions mer
 import json, re
 from . import db
 
-EMOTIONS = ["angry", "anger", "sad", "sadness", "happy", "anxious", "anxiety", "fearful", "fear", "guilty", "guilt", "ashamed", "shame",
-            "hopeful", "lonely", "loneliness", "frustrated", "frustration", "overwhelmed", "hopeless", "jealous", "jealousy", "grief", "hurt",
-            "betrayed", "confused", "numb", "empty", "worthless", "helpless"]
-# Variants of one feeling become one node ("angry" and "anger" are both Anger); the phone app kept them apart and also
-# matched "guilt" inside "guilty", so one sentence put two nodes on the map.
-CANON = {"angry": "Anger", "sad": "Sadness", "anxious": "Anxiety", "fearful": "Fear", "guilty": "Guilt", "ashamed": "Shame",
-         "lonely": "Loneliness", "frustrated": "Frustration", "jealous": "Jealousy", "break up": "Breakup", "laid off": "Layoff", "moving": "Moved"}
-PERSONS = [("my mother", "Mother"), ("my mom", "Mother"), ("my father", "Father"), ("my dad", "Father"), ("my sister", "Sister"),
-           ("my brother", "Brother"), ("my partner", "Partner"), ("my husband", "Husband"), ("my wife", "Wife"), ("my friend", "Friend"),
-           ("my boss", "Boss"), ("my therapist", "Previous therapist"), ("my child", "Child"), ("my daughter", "Daughter"),
-           ("my son", "Son"), ("my colleague", "Colleague"), ("my ex", "Ex-partner")]
-BELIEFS = ["i believe", "i think that", "i feel that", "i always", "i never", "i should", "i must", "i can't", "i have to", "i am worthless",
-           "i am not good enough", "i am a failure", "i don't deserve", "nobody cares", "i am broken", "i will never"]
-EVENTS = ["interview", "argument", "breakup", "break up", "diagnosis", "funeral", "wedding", "layoff", "laid off", "fight", "accident",
-          "surgery", "divorce", "deadline", "exam", "presentation", "promotion", "fired", "quit", "moved", "moving", "miscarriage",
-          "hospital", "birthday", "anniversary", "graduation", "relapse"]
+from . import rules
 
 COLORS = {"person": "#4A90D9", "event": "#F5A623", "emotion": "#D0021B", "belief": "#7ED321", "theme": "#9B59B6"}
 TYPE_NAMES = {"emotion": "Emotions", "person": "People", "belief": "Beliefs", "event": "Events", "theme": "Themes"}
@@ -35,21 +20,13 @@ def _dedupe(specs):
     return out
 
 def analyze(message):
-    """(nodes, edges) a message implies: nodes are (type, label), edges are (source label, target label, type)."""
-    low = " ".join((message or "").lower().replace("’", "'").split())
-    has = lambda w: re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", low) is not None
-    emotions = _dedupe([("emotion", CANON.get(w, w.capitalize())) for w in EMOTIONS if has(w)])
-    persons = _dedupe([("person", label) for pat, label in PERSONS if pat in low])
-    beliefs = []
-    for pat in BELIEFS:
-        if pat in low:
-            parts = low.split(pat)
-            if len(parts) > 1:
-                clause = re.split(r"[.!?;,\n]", parts[1].strip(), maxsplit=1)[0].strip(" \"'()-")        # one clause, not the rest of the paragraph
-                if len(clause) > 50: clause = clause[:50].rsplit(" ", 1)[0]
-                beliefs.append(("belief", f"{pat} {clause}" if clause else pat))
-    beliefs = _dedupe(beliefs)
-    events = _dedupe([("event", CANON.get(w, w.capitalize())) for w in EVENTS if has(w)])
+    """(nodes, edges) a message implies: nodes are (type, label), edges are (source label, target label, type). The word rules are in sf/rules.py."""
+    emotions = [("emotion", l) for l in rules.feelings_in(message)]; persons = [("person", l) for l in rules.people_in(message)]
+    beliefs = [("belief", l) for l in rules.beliefs_in(message)]; events = [("event", l) for l in rules.events_in(message)]
+    return nodes_and_edges(emotions, persons, beliefs, events)
+
+def nodes_and_edges(emotions, persons, beliefs, events):
+    """The map's connection rules: a person or event brings up a feeling, a feeling leads to a belief, a belief goes with a feeling, feelings go together."""
     edges = []
     for src in persons + events:
         edges += [(src[1], e[1], "TRIGGERS") for e in emotions]
@@ -103,6 +80,7 @@ def rebuild():
     """Clears the map and rebuilds it from every session's own messages (skipping ones answered by the crisis screen)."""
     with db.tx() as c:
         c.execute("DELETE FROM graph_nodes"); c.execute("DELETE FROM graph_edges")
+        c.execute("UPDATE messages SET meta=json_remove(meta, '$.tagged') WHERE role='user' AND json_valid(meta)")      # the model may look at them again
     done = 0
     for s in db.q("SELECT id FROM sessions ORDER BY id"):
         msgs = db.q("SELECT id,role,content,meta FROM messages WHERE session_id=? ORDER BY id", (s["id"],))

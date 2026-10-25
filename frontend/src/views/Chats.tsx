@@ -149,7 +149,7 @@ function Bubble({ m, session }: { m: any; session: any }) {
         </div>
         {hasBadges && <div className="mt-1 flex flex-wrap gap-1.5 pl-1" aria-label="What this exchange added">
           {cap.memory > 0 && <BadgePill icon={BADGE_ICONS.memory} tone="teal" label={count(cap.memory, 'memory', 'memories')} title="This exchange was remembered, so a later session can recall it." />}
-          {cap.nodes > 0 && <BadgePill icon={BADGE_ICONS.nodes} tone="purple" label={count(cap.nodes, 'node', 'nodes')} title="New things on your Inner Map from what you wrote." onClick={() => go('map', { sessionId: session.id })} />}
+          {cap.nodes > 0 && <BadgePill icon={BADGE_ICONS.nodes} tone="purple" label={count(cap.nodes, 'node', 'nodes')} title={cap.by_model ? "New things on your Inner Map from what you wrote (some found by the model on this computer)." : "New things on your Inner Map from what you wrote."} onClick={() => go('map', { sessionId: session.id })} />}
           {cap.edges > 0 && <BadgePill icon={BADGE_ICONS.edges} tone="indigo" label={count(cap.edges, 'edge', 'edges')} title="New connections on your Inner Map." onClick={() => go('map', { sessionId: session.id })} />}
           {cap.dream && <BadgePill icon={BADGE_ICONS.dream} tone="purple" label="dream logged" title="This sounded like a dream, so it was saved. See it in Insights." onClick={toInsights('dreams')} />}
           {cap.note && <BadgePill icon={BADGE_ICONS.note} tone="green" label="note" title="A summary note for this session was started. See it in Insights." onClick={toInsights('notes')} />}

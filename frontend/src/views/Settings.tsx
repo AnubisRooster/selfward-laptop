@@ -111,6 +111,8 @@ export default function Settings() {
 
       <Remembered v={v} setKey={setKey} save={save} />
 
+      <Tagging v={v} setKey={setKey} />
+
       <Card className="space-y-3"><h2 className="font-medium">Look</h2>
         <Seg label="Theme" value={theme} options={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]} onChange={t => { setPref(t as ThemePref); setTheme(t as ThemePref); }} /></Card>
 
@@ -254,6 +256,25 @@ function ThisPhone() {
     <Card className="space-y-2"><h2 className="font-medium">This phone</h2>
       <div className="text-xs text-zinc-500">You are signed in to your laptop’s Selfward over your private network, for 7 days after you last use it. Remote access itself, and the laptop’s own microphone, can only be managed on the laptop.</div>
       <Btn kind="danger" onClick={async () => { try { await post('/remote/logout'); } catch { /* already signed out */ } location.reload(); }}>Sign out of this phone</Btn>
+    </Card>
+  );
+}
+
+function Tagging({ v, setKey }: { v: any; setKey: (k: string, val: any) => void }) {
+  const [st, setSt] = useState<any>(null); const [err, setErr] = useState('');
+  const load = async () => { try { setSt(await get('/graph/enrich')); } catch { /* the page still works without it */ } };
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+  const toggle = async (on: boolean) => { setErr(''); try { await put('/settings', { values: { tag_with_model: on } }); setKey('tag_with_model', on); toast.ok(on ? 'The model on this computer will take a closer look after each answer.' : 'Back to the word rules only.'); load(); } catch (e) { setErr(errText(e)); } };
+  const run = async () => { setErr(''); try { setSt(await post('/graph/enrich')); } catch (e) { setErr(errText(e)); } };
+  return (
+    <Card className="space-y-3"><h2 className="font-medium">Finding things in what you write</h2>
+      <div className="text-xs text-zinc-500">The Inner Map, dream and note tags come from plain word rules (feelings, people, beliefs, events and dream wordings) that run on this computer with no model. They miss anything phrased in a way they do not know. You can also let a model look more closely.</div>
+      <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={!!v.tag_with_model} onChange={e => toggle(e.target.checked)} />
+        <span>Look more closely with the model on this computer<span className="block text-xs text-zinc-500">After each answer, a model on this computer reads your own message again, in the background, and adds feelings, people, beliefs, events, themes and dreams the rules missed. It uses only a model installed here, even when your sessions use a cloud model, and never sees a message that brought up the crisis screen. It makes the machine busier for a little while after each reply.</span></span></label>
+      {st && <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">Model: <code className="rounded bg-zinc-800 px-1">{st.model.replace('ollama_chat/', '')}</code>{!st.ollama ? <Badge tone="amber">Ollama isn’t running</Badge> : st.installed ? <Badge tone="green">installed</Badge> : <Badge tone="red">not installed: <code>ollama pull {st.model.replace('ollama_chat/', '')}</code></Badge>}</div>}
+      <Err>{err}</Err>
+      <div className="flex flex-wrap items-center gap-2"><Btn small onClick={run} disabled={!st || st.running || !st.installed || st.pending === 0} loading={!!st?.running}>{st?.running ? `Looking… ${st.done} of ${st.total}` : `Look through what I have already written${st && st.pending ? ` (${st.pending})` : ''}`}</Btn>
+        <span className="text-xs text-zinc-500">{st && st.pending === 0 ? 'Everything has been looked at.' : 'Safe to run again: it skips what it has seen. The Inner Map has a button that re-reads everything with the word rules.'}</span></div>
     </Card>
   );
 }

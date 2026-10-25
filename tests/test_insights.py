@@ -13,7 +13,7 @@ class Dreams(unittest.TestCase):
     def setUp(self): reset()
     def test_a_dream_is_recognised_with_its_feelings_and_symbols(self):
         f, s = insights.detect_dream("Last night I dreamt I was falling from a bridge into dark water and felt terrified and lonely.")
-        self.assertEqual(s, ["water", "falling", "bridge"]); self.assertEqual(f, ["loneliness", "terrified"])
+        self.assertEqual(s, ["water", "falling", "bridge"]); self.assertEqual(f, ["fear", "loneliness"])
     def test_ordinary_talk_is_not_a_dream(self):
         self.assertIsNone(insights.detect_dream("I dream of a quieter job someday")); self.assertIsNone(insights.detect_dream("My day was fine."))
     def test_symbols_are_whole_words(self):

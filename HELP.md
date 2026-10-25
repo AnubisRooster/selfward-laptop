@@ -124,6 +124,12 @@ Selfward finds `~/SmartWardApp` by itself, or the folder named in the `SELFWARD_
 - **Settings → What Selfward remembers**: see, add to, forget, or switch off the memories kept across sessions.
 - Deleting a session also deletes its messages, notes, dreams, graph and memories. A Narrative already written from it is not edited; edit or delete it on its page.
 
+## How things get tagged
+
+The pills under a reply and the Inner Map come from **plain word rules** that run on your computer with no model: about 40 feelings (with their other wordings: scared, afraid and frightened are all Fear), 20 kinds of people ("my older sister", "my new boss", "my girlfriend"), belief openers ("I always…", "it's my fault…"), about 35 life events, and many ways of telling a dream ("I had a weird dream", "I dreamt…"). A feeling you deny ("I'm not anxious") is not counted. Anything phrased in a way the rules do not know is missed, so some messages add nothing.
+
+**To catch more:** Settings → *Finding things in what you write* → **Look more closely with the model on this computer**. After each answer, a model installed on this computer reads your message again in the background and adds what the rules missed (feelings, people, beliefs, events, themes, and a dream the rules did not recognise). It uses only a local Ollama model, never a cloud one, even when your sessions use a cloud model, and never sees a message that brought up the crisis screen. It needs a model installed (`ollama pull llama3.2:3b`). **Look through what I have already written** (there and on the Inner Map) does the same for earlier messages; it is safe to run again. **Re-read everything with the word rules** (Inner Map) rebuilds the map from scratch with the current rules, which is how older messages benefit from newly added words.
+
 ## The other pages
 
 - **Inner Map**: the feelings, people, beliefs and events you write about, and how they connect. Built from your own words on this computer, with no model.
@@ -195,6 +201,7 @@ Then quit Selfward from its tray icon and open it again. An open window that was
 | No sound when reading aloud | Check Settings → Voice. If the natural voice is not installed, the browser voice is used. |
 | Hands-free stays open ("Hearing you…") for a long time | Usually the room: a fan, music or a vacuum that came on while you were quiet. It now lets go within a few seconds, but a very noisy room still confuses it; move the microphone or quiet the noise. Also see the next row. |
 | Hands-free cuts you off, or waits too long after you stop | Settings → Voice → **Pause that ends your turn** (0.3 to 1.5 s, 0.8 by default). Shorter is snappier, longer waits while you think. It applies the next time you switch hands-free on. After the pause, turning speech into text takes a few seconds on a laptop; a smaller speech model is faster: `MODEL=base.en ~/SmartWardApp/stt/setup.sh`. |
+| The pills/Inner Map are sparse | See *How things get tagged*: turn on the closer look, then run it over earlier messages. Needs a local model (`ollama pull llama3.2:3b`). |
 | Hands-free says speech input isn't installed | Run `~/SmartWardApp/stt/setup.sh` and `sudo apt install alsa-utils`. |
 | The phone can't connect | Is the laptop awake and Selfward running? Tailscale connected on both? `tailscale serve status` should show port 8443 pointing at 127.0.0.1:8100. |
 | "This Tailscale account isn't allowed" | The login in Settings → Remote access must be the account your phone uses. |

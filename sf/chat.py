@@ -1,6 +1,6 @@
 """One chat turn: safety checks, memory, the persona's prompt, streaming the answer into the database."""
 import json, threading
-from . import compact, db, graph, insights, llm, memory, personas, safety
+from . import compact, db, graph, insights, llm, memory, personas, safety, tagging
 from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
@@ -93,9 +93,17 @@ def _refresh_recap(session, everything):
     try:
         persona = personas.resolve(session["persona"])
         budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or ""), "x" * 2400, "x" * 400)
-        compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
+        with tagging.MODEL_LOCK:
+            compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
     except Exception as e:
         print(f"[recap skipped] {type(e).__name__}: {str(e)[:150]}", flush=True)
+
+def _second_look(session_id, text, mid, user_mid):
+    try:
+        tagging.look(session_id, text, mid)
+        if user_mid: tagging.mark(user_mid)
+    except Exception as e:
+        print(f"[second look skipped] {type(e).__name__}: {str(e)[:150]}", flush=True)
 
 def join_background(timeout=30):
     for t in list(_background): t.join(timeout)
@@ -147,6 +155,9 @@ def _turn(session_id, user_text):
             except Exception: pass
         if captured: meta["captured"] = captured
         db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (acc or ("(stopped)" if stopped else "(no answer)"), json.dumps(meta), mid))
+        if tagging.enabled() and not stopped:                  # an optional second look by the model on this computer, after the answer (see sf/tagging.py)
+            user_row = db.q("SELECT id FROM messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1", (session_id,), one=True)
+            t = threading.Thread(target=_second_look, args=(session_id, user_text, mid, user_row["id"] if user_row else None), daemon=True); _background.append(t); t.start()
         if acc and not stopped and not violation:
             t = threading.Thread(target=_refresh_recap, args=(session, earlier + [{"role": "user", "content": user_text}, {"role": "assistant", "content": acc}]), daemon=True)
             _background.append(t); t.start()

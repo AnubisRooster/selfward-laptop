@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { ask, toast } from '../feedback';
-import { BASE, errText, post } from '../api';
+import { BASE, errText, get, post } from '../api';
 import { useLoad, useNav } from '../hooks';
 import { isLight } from '../theme';
 import { Badge, Btn, Card, Empty, Err, Seg, Title, cx } from '../ui';
@@ -96,7 +96,7 @@ function Overview({ data, onPick, onExport, onRebuild, busy, sessionId }: { data
             <ul className="space-y-0.5">{data.stats.top[t.id].map((n: any) => <li key={n.label} className="flex justify-between gap-2 text-sm"><button className="truncate text-left hover:underline" onClick={() => onPick(t.id, n.label)}>{n.label}</button><span className="text-xs text-zinc-500">{n.strength}</span></li>)}</ul></Card>))}</div>
         {data.links.length > 0 && <div><div className="mb-1 text-xs font-medium text-zinc-400">Connections that came up most</div>
           <ul className="space-y-0.5 text-sm text-zinc-300">{data.links.map((l: any, i: number) => <li key={i} className="flex justify-between gap-3"><span>{l.text}</span><span className="text-xs text-zinc-500">{l.weight}</span></li>)}</ul></div>}
-        <div className="flex flex-wrap gap-2"><Btn small onClick={() => onExport('/graph/export/graphml' + q)}>Export GraphML (Gephi)</Btn><Btn small onClick={() => onExport('/graph/export/cytoscape' + q)}>Export Cytoscape JSON</Btn><Btn small kind="ghost" onClick={onRebuild} loading={busy}>Rebuild from my sessions</Btn></div>
+        <div className="flex flex-wrap gap-2"><Btn small onClick={() => onExport('/graph/export/graphml' + q)}>Export GraphML (Gephi)</Btn><Btn small onClick={() => onExport('/graph/export/cytoscape' + q)}>Export Cytoscape JSON</Btn><Btn small kind="ghost" onClick={onRebuild} loading={busy} title="Clears the map and builds it again from everything you have written, with the current word rules">Re-read everything with the word rules</Btn><LookCloser /></div>
       </div>}
     </div>
   );
@@ -119,4 +119,16 @@ function Detail({ sel, sessionId, onClose, onPick, onOpen }: { sel: { type: stri
       </>}
     </aside>
   );
+}
+
+/** The optional second look by the model on this computer, over everything already written. */
+function LookCloser() {
+  const [st, setSt] = useState<any>(null);
+  const load = async () => { try { setSt(await get('/graph/enrich')); } catch { /* optional */ } };
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (!st?.running) return; const t = setInterval(load, 3000); return () => clearInterval(t); }, [st?.running]);
+  const run = async () => { try { setSt(await post('/graph/enrich')); } catch (e) { toast.error(errText(e)); } };
+  if (!st) return null;
+  return <Btn small onClick={run} loading={!!st.running} disabled={st.running || st.pending === 0} title={st.installed ? `Asks ${st.model.replace('ollama_chat/', '')}, a model on this computer, to find what the word rules missed` : 'Needs a model installed on this computer (see Settings → Finding things in what you write)'}>
+    {st.running ? `Looking… ${st.done} of ${st.total}` : st.pending === 0 ? 'Looked through everything' : 'Find more with the model on this computer'}</Btn>;
 }
