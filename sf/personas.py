@@ -31,7 +31,7 @@ def profile_context():
     if s["intake_goals"]: lines.append(f"Goals: {s['intake_goals']}")
     return ("Client context (from intake):\n" + "\n".join(lines)) if lines else ""
 
-def system_prompt(persona, modality, custom=""):
+def system_prompt(persona, modality, custom="", extra=""):
     if persona["kind"] == "companion":
         prompt = COMPANION_PROMPT.replace("%NAME%", persona["name"] or "Kai").replace("%TRAITS%", persona["traits"])
     elif persona["kind"] == "spiritual":
@@ -41,5 +41,6 @@ def system_prompt(persona, modality, custom=""):
         prompt = (f"Your name is {persona['name']}. When it feels natural, you can let the client know your name and let it give you a bit of personality.\n\n" + base) if persona["name"] else base
     ctx = profile_context()
     if ctx: prompt += "\n\n" + ctx
+    if extra: prompt += "\n\n" + extra
     if custom: prompt += "\n\nAdditional instructions: " + custom
     return prompt

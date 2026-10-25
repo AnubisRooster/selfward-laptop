@@ -1,6 +1,6 @@
 """One chat turn: safety checks, memory, the persona's prompt, streaming the answer into the database."""
 import json, threading
-from . import compact, db, graph, insights, llm, memory, personas, safety, tagging
+from . import companion, compact, db, graph, insights, llm, memory, personas, safety, tagging
 from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
@@ -55,7 +55,7 @@ def _touch(session_id, first_text):
 
 def build_messages(session, history, user_text, memories, recap="", important=(), older=()):
     persona = personas.resolve(session["persona"])
-    msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "")}]
+    msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))}]
     if important: msgs.append({"role": "system", "content": "Things that have mattered to this person across sessions:\n" + "\n".join("- " + m for m in important)})
     if memories: msgs.append({"role": "system", "content": "Relevant context from previous sessions:\n" + "\n".join("- " + m for m in memories)})
     if older: msgs.append({"role": "system", "content": "Earlier in this same conversation (no longer shown in full):\n" + "\n".join("- " + m for m in older)})
@@ -67,7 +67,7 @@ def build_messages(session, history, user_text, memories, recap="", important=()
 def fit(session, earlier, user_text, memories, important):
     """Builds the prompt so it fits the model's window: older turns become a recap, then memories and turns are dropped until it fits."""
     window = llm.context_tokens(); persona = personas.resolve(session["persona"])
-    system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "")
+    system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))
     older = []
     budget = compact.history_budget(window, system_text, "\n".join(memories) + "\n".join(important) + "x" * 1500, user_text)    # room for what recall may add
     recap, history = compact.for_prompt(session["id"], earlier, budget)
@@ -92,7 +92,7 @@ def _refresh_recap(session, everything):
     """After the answer: folds older turns into the stored recap, so the next long turn has it. A failure only means the next turn trims instead."""
     try:
         persona = personas.resolve(session["persona"])
-        budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or ""), "x" * 2400, "x" * 400)
+        budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", "")), "x" * 2400, "x" * 400)
         with tagging.MODEL_LOCK:
             compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
     except Exception as e:
@@ -135,6 +135,8 @@ def _turn(session_id, user_text):
         memories = memory.recall(user_text, exclude_session=session_id)
         important = memory.recall_global(user_text, exclude_session=session_id)
         memories = [m for m in memories if m not in important]          # said once, under the stronger heading
+        extra, warmth = companion.addendum(session, user_text) if session["persona"] == "companion" else ("", {})        # the companion's warmth dial for this turn
+        session = {**session, "_extra": extra}
         msgs, persona = fit(session, earlier, user_text, memories, important)
         acc = ""
         for piece in llm.stream(msgs, model=llm.current_model(session)):
@@ -147,6 +149,16 @@ def _turn(session_id, user_text):
         if violation:
             _event(session_id, "boundary_violation", "warning", f"Detected pattern: '{pattern}'")
             acc = safety.BOUNDARY_REPLACEMENT; meta["safety"] = "boundary"
+        if warmth and not violation:
+            meta["flirt"] = warmth["flirt"]
+            if warmth.get("tone_dropped"): meta["tone_dropped"] = True
+            if warmth.get("time_check"): meta["time_check"] = True
+            kind, phrase = companion.reply_problem(acc)
+            if kind:
+                _event(session_id, "companion_" + kind, "warning", f"Detected pattern: '{phrase}'")
+                acc = companion.PRESSURE_REPLACEMENT if kind == "pressure" else companion.EXPLICIT_REPLACEMENT
+                meta["safety"] = "companion_" + kind; meta.pop("time_check", None); violation = True
+            elif companion.looks_like_refusal(acc): meta["refused"] = True        # the model stepped out of the role; the page says so
         if stopped: meta["cancelled"] = True
         if acc and not stopped and not violation:
             try:

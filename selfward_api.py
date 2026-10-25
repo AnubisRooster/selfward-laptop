@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import awake, db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, remote, rules, safety, tagging, stt, tailscale, tts
+from sf import awake, companion, db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, remote, rules, safety, tagging, stt, tailscale, tts
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -62,6 +62,7 @@ def catalog():
             "personalities": [{"id": k, "label": v} for k, v in COMPANION_PERSONALITY_LABELS.items()],
             "genders": [{"id": k, "label": v} for k, v in COMPANION_GENDER_LABELS.items()],
             "traditions": [{"id": k, "label": v} for k, v in SPIRITUAL_TRADITION_LABELS.items()],
+            "warmth": [{"id": i, "label": companion.NAMES[i], "blurb": companion.BLURBS[i]} for i in range(4)],
             "regions": sorted(safety.RESOURCES) }
 
 @app.get("/api/settings")
@@ -79,6 +80,9 @@ def put_settings(body: dict):
             try: tts.validate_setting(k, v, body.get("values"))
             except ValueError as e: bad(str(e))
         if k == "tagging_model" and v and (not isinstance(v, str) or not llm.is_local(v)): bad("The model that looks more closely must be one on this computer (an Ollama model).")
+        if k == "companion_flirt" and (isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 3): bad("Warmth is a whole number from 0 to 3.")
+        if k == "companion_flirt" and v > 0 and not (body.get("values", {}).get("companion_adult") or db.get_setting("companion_adult")): bad("Confirm that you are 18 or older before turning the warmth up.", 403)
+        if k in ("companion_adult", "companion_time_check") and not isinstance(v, bool): bad("That is a yes or no setting.")
         if k == "tag_with_model" and not isinstance(v, bool): bad("That is a yes or no setting.")
         if k in ("lock_after", "lock_idle"):
             lo, hi = (10, 86400) if k == "lock_after" else (0, 1440)
@@ -230,7 +234,7 @@ def _session_row(s):
     p = personas.resolve(s["persona"]); eff = s.get("model") or db.get_setting("model")
     last = db.q("SELECT content FROM messages WHERE session_id=? AND role='assistant' AND content!='' ORDER BY id DESC LIMIT 1", (s["id"],), one=True)
     n = lambda sql: db.q(sql, (s["id"],), one=True)["n"]
-    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff),
+    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff), "flirt_effective": companion.level_for(s, p["kind"]),
             "message_count": n("SELECT COUNT(*) n FROM messages WHERE session_id=? AND content!=''"), "node_count": n("SELECT COUNT(*) n FROM graph_nodes WHERE session_id=?"), "memory_count": n("SELECT COUNT(*) n FROM memories WHERE session_id=?")}
 
 @app.get("/api/sessions")
@@ -253,8 +257,12 @@ def session_get(sid: int):
 
 @app.patch("/api/sessions/{sid}")
 def session_patch(sid: int, body: dict):
-    for k in ("title", "persona", "modality", "system_prompt", "model", "archived"):
+    for k in ("title", "persona", "modality", "system_prompt", "model", "archived", "flirt"):
         if k not in body: continue
+        if k == "flirt":
+            v = body[k]
+            if isinstance(v, bool) or not isinstance(v, int) or not -1 <= v <= 3: bad("Warmth is a whole number from 0 to 3 (or -1 to follow Settings).")
+            if v > 0 and not db.get_setting("companion_adult"): bad("Confirm that you are 18 or older in Settings before turning the warmth up.", 403)
         if k == "persona" and body[k] not in personas.KINDS: bad("Unknown persona.")
         if k == "modality" and body[k] not in ALL_MODALITIES: bad("Unknown approach.")
         if k == "model": body[k] = _check_model(body[k])

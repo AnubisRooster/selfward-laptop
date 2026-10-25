@@ -79,6 +79,20 @@ export default function Settings() {
         <Btn kind="primary" onClick={() => save(['therapist_name', 'companion_name', 'spiritual_name', 'companion_personality', 'companion_gender', 'spiritual_tradition', 'default_persona', 'default_modality'])}>Save guides</Btn>
       </Card>
 
+      <Card className="space-y-3"><h2 className="font-medium">Companion warmth</h2>
+        <div className="text-xs text-zinc-500">How affectionate the Companion is. It is always an AI and says so if you ask. It never pressures you to stay, and it drops back to plain kindness when you sound low. You can change it per session from the heart button in a Companion chat.</div>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={!!v.companion_adult} onChange={async e => {
+            if (e.target.checked && !await ask.confirm({ title: 'Are you 18 or older?', body: 'Warmer Companion settings include flirting and romantic feeling. They are for adults only.', confirmLabel: 'I am 18 or older' })) return;
+            try { await put('/settings', { values: { companion_adult: e.target.checked, ...(e.target.checked ? {} : { companion_flirt: 0 }) } }); setKey('companion_adult', e.target.checked); if (!e.target.checked) setKey('companion_flirt', 0); toast.ok(e.target.checked ? 'Warmer settings are available' : 'Warmth turned off'); } catch (er) { toast.error(errText(er)); } }} />
+          <span>I am 18 or older, and I want to be able to turn the warmth up</span></label>
+        <Field label="Warmth for new Companion sessions" hint={catalog.warmth[v.companion_flirt || 0]?.blurb}>
+          <select className={inputCls} disabled={!v.companion_adult} value={v.companion_flirt || 0} onChange={async e => { const n = Number(e.target.value); try { await put('/settings', { values: { companion_flirt: n } }); setKey('companion_flirt', n); toast.ok('Saved'); } catch (er) { toast.error(errText(er)); } }}>
+            {catalog.warmth.map((w: any) => <option key={w.id} value={w.id}>{w.id} · {w.label}</option>)}</select></Field>
+        {v.companion_flirt >= 2 && !String(v.model).startsWith('ollama') && <div className="text-xs text-amber-300">These conversations are quite personal, and a cloud model’s provider receives them. Prefer a provider that does not keep or train on what you send; free models often do.</div>}
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={v.companion_time_check !== false} onChange={async e => { try { await put('/settings', { values: { companion_time_check: e.target.checked } }); setKey('companion_time_check', e.target.checked); toast.ok('Saved'); } catch (er) { toast.error(errText(er)); } }} />
+          <span>Gently remind me when I have been here a couple of hours<span className="block text-xs text-zinc-500">Applies to the romantic and devoted levels.</span></span></label>
+      </Card>
+
       <Card className="space-y-3"><h2 className="font-medium">About you</h2><div className="text-xs text-zinc-500">Added to every conversation so the guide knows who it is talking with.</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Name"><input className={inputCls} value={v.user_name} onChange={set('user_name')} /></Field>

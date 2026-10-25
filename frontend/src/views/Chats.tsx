@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import { ago, del, errText, get, patch, post } from '../api';
+import { ago, del, errText, get, patch, post, put } from '../api';
 import { speech, useLoad, useNav } from '../hooks';
 import { Badge, Btn, Empty, Err, Field, Modal, Spin, inputCls, cx } from '../ui';
 import { ask, toast } from '../feedback';
@@ -11,7 +11,7 @@ import { wantAudioChat } from '../voiceIntent';
 import { wantInsights } from '../insightsIntent';
 import { touch } from '../activity';
 import { BADGE_ICONS, BadgePill, ModalityIcon, PersonaAvatar } from '../icons';
-import { Archive, Brain, ChevronDown, Cloud, Cpu, Hexagon, Lightbulb, Mic, MicOff, Moon, NotebookPen, Pencil, Square, Trash2, Volume2 } from 'lucide-react';
+import { Archive, Brain, ChevronDown, Cloud, Cpu, Heart, Hexagon, Lightbulb, Mic, MicOff, Moon, NotebookPen, Pencil, Square, Trash2, Volume2 } from 'lucide-react';
 
 export const shortModel = (m: string) => (m || '').replace(/^ollama_chat\//, '').replace(/^openrouter\/openrouter\/free$/, 'OpenRouter · automatic free').replace(/^openrouter\//, 'OpenRouter · ').replace(/:free$/, '');
 const isLocalModel = (m: string) => (m || '').startsWith('ollama');
@@ -82,6 +82,34 @@ function ApproachDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: a
   );
 }
 
+function WarmthDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: any; onClose: () => void; onChanged: () => void }) {
+  const { data: settings, reload } = useLoad<any>('/settings'); const [err, setErr] = useState('');
+  const pick = async (n: number) => {
+    try {
+      if (n > 0 && !settings?.companion_adult) {
+        if (!await ask.confirm({ title: 'Are you 18 or older?', body: 'Warmer Companion settings include flirting and romantic feeling. They are for adults only.', confirmLabel: 'I am 18 or older' })) return;
+        await put('/settings', { values: { companion_adult: true } }); reload();
+      }
+      await patch(`/sessions/${s.id}`, { flirt: n }); toast.ok(n === 0 ? 'Back to friends.' : `Warmth: ${catalog.warmth[n].label}.`); onChanged(); onClose();
+    } catch (e) { setErr(errText(e)); }
+  };
+  const cur = s.flirt_effective ?? 0;
+  return (
+    <Modal title="Warmth" onClose={onClose}>
+      <div className="space-y-3">
+        <div className="text-xs text-zinc-500">How affectionate {s.persona_name} is, from your next message on. It is an AI and says so if you ask, it never pressures you to stay, and it softens when you sound low. Change it or turn it off whenever you like.</div>
+        <Err>{err}</Err>
+        <div role="radiogroup" aria-label="Warmth" className="space-y-1.5">{catalog.warmth.map((w: any) => (
+          <button key={w.id} role="radio" aria-checked={cur === w.id} onClick={() => cur === w.id ? onClose() : pick(w.id)} className={cx('flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left', cur === w.id ? 'border-rose-500 bg-rose-950/30' : 'border-zinc-700 hover:bg-zinc-800')}>
+            <span className="mt-0.5 flex shrink-0 gap-0.5 text-rose-300" aria-hidden>{[0, 1, 2].map(i => <Heart key={i} size={12} fill={i < w.id ? 'currentColor' : 'none'} />)}</span>
+            <span className="min-w-0"><span className="block text-sm font-medium">{w.label}{cur === w.id && <span className="ml-2"><Badge tone="indigo">now</Badge></span>}</span><span className="block text-xs text-zinc-500">{w.blurb}</span></span></button>))}</div>
+        {s.flirt >= 0 && <Btn small onClick={async () => { try { await patch(`/sessions/${s.id}`, { flirt: -1 }); toast.ok('Following Settings again.'); onChanged(); onClose(); } catch (e) { setErr(errText(e)); } }}>Follow the default in Settings</Btn>}
+        {cur >= 2 && !s.model_is_local && <div className="text-xs text-amber-300">This session is on a cloud model, so these personal messages go to its provider. A provider that does not keep or train on your messages is the safer choice; free models often keep them.</div>}
+      </div>
+    </Modal>
+  );
+}
+
 function ModelDialog({ s, onClose, onChanged }: { s: any; onClose: () => void; onChanged: () => void }) {
   const { data: models } = useLoad<any>('/models'); const { data: settings } = useLoad<any>('/settings');
   const [free, setFree] = useState<any[] | null>(null); const [loading, setLoading] = useState(false); const [err, setErr] = useState(''); const [busy, setBusy] = useState(''); const [other, setOther] = useState('');
@@ -141,10 +169,12 @@ function Bubble({ m, session }: { m: any; session: any }) {
           {!mine && <div className="mb-0.5 flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-zinc-400">{who}
             {approach && <span className="inline-flex items-center gap-1 font-normal text-zinc-500" title="The approach this reply was written in"><ModalityIcon id={approach} size={11} />{label(approach)}</span>}
             {m.meta?.model && <span className="inline-flex items-center gap-1 font-normal text-zinc-500" title={m.meta.model}>{isLocalModel(m.meta.model) ? <Cpu size={11} aria-hidden /> : <Cloud size={11} aria-hidden />}{shortModel(m.meta.model)}</span>}
-            {safety && <Badge tone="amber">{safety === 'boundary' ? 'kept within safe limits' : 'support resources'}</Badge>}</div>}
+            {safety && <Badge tone="amber">{safety === 'boundary' ? 'kept within safe limits' : String(safety).startsWith('companion_') ? 'kept kind' : 'support resources'}</Badge>}</div>}
           {m.meta?.streaming && !m.content ? <span className="text-zinc-400">…</span> :
             <div className="prose-sw !text-inherit [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:ml-5 [&_ul]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{m.content}</ReactMarkdown></div>}
           {!mine && m.content && !m.meta?.streaming && speech.supported && <button className="mt-1 flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 focus:text-zinc-300" onClick={() => speech.speak(plainForSpeech(m.content), 1, '', kind)}><Volume2 size={11} aria-hidden /> Read aloud</button>}
+          {!mine && m.meta?.tone_dropped && <div className="mt-1 text-[11px] text-zinc-400">Kept gentle because you sounded low. The warmth comes back when you do.</div>}
+          {!mine && m.meta?.refused && <div className="mt-1 text-[11px] text-amber-300">This model stepped out of the role. Another model may suit it better (the model pill above).</div>}
           {m.meta?.cancelled && <div className="mt-1 text-[11px] text-zinc-400">stopped</div>}
         </div>
         {hasBadges && <div className="mt-1 flex flex-wrap gap-1.5 pl-1" aria-label="What this exchange added">
@@ -163,7 +193,7 @@ function Bubble({ m, session }: { m: any; session: any }) {
 function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGone: () => void }) {
   const { data: s, error, reload } = useLoad<any>(`/sessions/${id}`, undefined, 1000);
   const [text, setText] = useState(''); const [err, setErr] = useState(''); const [sending, setSending] = useState(false);
-  const [pickModel, setPickModel] = useState(false); const [pickGuide, setPickGuide] = useState(false); const [pickApproach, setPickApproach] = useState(false);
+  const [pickModel, setPickModel] = useState(false); const [pickGuide, setPickGuide] = useState(false); const [pickApproach, setPickApproach] = useState(false); const [pickWarmth, setPickWarmth] = useState(false);
   const end = useRef<HTMLDivElement>(null); const box = useRef<HTMLTextAreaElement>(null);
   const running = s?.status === 'running';
   const n = s?.messages?.length || 0; const last = s?.messages?.[n - 1]?.content?.length || 0;
@@ -205,6 +235,10 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <button onClick={() => setPickGuide(true)} title="Change who you are talking with" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800">{s.persona_name}<ChevronDown size={11} aria-hidden /></button>
           {s.persona === 'therapist' && <button onClick={() => setPickApproach(true)} title="Change the approach" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800"><ModalityIcon id={s.modality} size={12} />{label(s.modality)}<ChevronDown size={11} aria-hidden /></button>}
+          {s.persona === 'companion' && (s.flirt_effective > 0 ?
+            <span className="flex items-center overflow-hidden rounded-full border border-rose-700 bg-rose-950/30 text-rose-200"><button onClick={() => setPickWarmth(true)} title="Change the warmth" className="flex items-center gap-1 px-2.5 py-1 hover:bg-rose-900/40"><Heart size={12} fill="currentColor" aria-hidden />Warmth {s.flirt_effective} · {catalog.warmth[s.flirt_effective]?.label}</button>
+              <button onClick={() => set({ flirt: 0 })} title="Turn the warmth off for this session" aria-label="Turn the warmth off for this session" className="border-l border-rose-700 px-2 py-1 hover:bg-rose-900/40">Off</button></span> :
+            <button onClick={() => setPickWarmth(true)} title="Make the Companion warmer" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800"><Heart size={12} aria-hidden />Warmth<ChevronDown size={11} aria-hidden /></button>)}
           <button onClick={() => setPickModel(true)} title="Change the model that writes the replies in this session" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800">{s.model_is_local ? <Cpu size={12} aria-hidden /> : <Cloud size={12} aria-hidden />}{shortModel(s.model_effective)}{!s.model && <span className="text-zinc-500"> · default</span>}<ChevronDown size={11} aria-hidden /></button>
           <span className="ml-auto flex items-center gap-0.5">
             <Btn small kind="ghost" title="Insights for this session" label="Insights" onClick={() => { wantInsights('highlights'); go('insights', { sessionId: id }); }}><Lightbulb size={14} aria-hidden /></Btn>
@@ -215,6 +249,7 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
       </header>
       {pickGuide && <GuideDialog s={s} catalog={catalog} onClose={() => setPickGuide(false)} onChanged={reload} />}
       {pickApproach && <ApproachDialog s={s} catalog={catalog} onClose={() => setPickApproach(false)} onChanged={reload} />}
+      {pickWarmth && <WarmthDialog s={s} catalog={catalog} onClose={() => setPickWarmth(false)} onChanged={reload} />}
       {pickModel && <ModelDialog s={s} onClose={() => setPickModel(false)} onChanged={reload} />}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
         {n === 0 && <Empty icon="✎" title={`Say hello to ${s.persona_name}`}>Whatever is on your mind. This stays on this computer; the model runs here unless you chose a cloud model in Settings.</Empty>}
