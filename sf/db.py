@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS graph_nodes(id INTEGER PRIMARY KEY, session_id INTEGE
 CREATE INDEX IF NOT EXISTS ix_gn_session ON graph_nodes(session_id);
 CREATE TABLE IF NOT EXISTS graph_edges(id INTEGER PRIMARY KEY, session_id INTEGER, source INTEGER, target INTEGER, type TEXT, weight REAL DEFAULT 1.0, ts REAL);
 CREATE INDEX IF NOT EXISTS ix_ge_session ON graph_edges(session_id);
+CREATE TABLE IF NOT EXISTS dreams(id INTEGER PRIMARY KEY, session_id INTEGER, narrative TEXT, feelings TEXT DEFAULT '[]', symbols TEXT DEFAULT '[]', analysis TEXT DEFAULT '', ts REAL);
+CREATE INDEX IF NOT EXISTS ix_dream_session ON dreams(session_id);
+CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT DEFAULT 'journal', title TEXT, content TEXT, auto INTEGER DEFAULT 0, ts REAL, updated REAL);
+CREATE INDEX IF NOT EXISTS ix_note_session ON notes(session_id);
 CREATE TABLE IF NOT EXISTS safety_events(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT, level TEXT, message TEXT, ts REAL);
 """
 

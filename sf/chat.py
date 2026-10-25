@@ -1,6 +1,6 @@
 """One chat turn: safety checks, memory, the persona's prompt, streaming the answer into the database."""
 import json, threading
-from . import db, graph, llm, memory, personas, safety
+from . import db, graph, insights, llm, memory, personas, safety
 from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
@@ -71,12 +71,21 @@ def build_messages(session, history, user_text, memories):
     msgs.append({"role": "user", "content": user_text})
     return msgs, persona
 
+def _capture(session_id, user_text, earlier):
+    """What your message adds besides the answer: the inner map, a dream record, the session's summary note. Never blocks the answer."""
+    try:
+        graph.extract(session_id, user_text, [m["content"] for m in earlier if m["role"] == "user"])
+        return insights.capture(session_id, user_text)
+    except Exception:
+        return {}
+
 def _turn(session_id, user_text):
     session = db.q("SELECT * FROM sessions WHERE id=?", (session_id,), one=True)
-    mid = _store(session_id, "assistant", "", {"streaming": True})
+    mid = _store(session_id, "assistant", "", {"streaming": True}); captured = {}
     try:
         earlier = db.q("SELECT role,content FROM messages WHERE session_id=? AND id<? AND role IN ('user','assistant') AND content!='' ORDER BY id", (session_id, mid))
         earlier = earlier[:-1] if earlier and earlier[-1]["role"] == "user" and earlier[-1]["content"] == user_text else earlier   # this turn's own message is added last
+        captured = _capture(session_id, user_text, earlier)       # from your words alone, so it happens even if the model is down
         history = retained_history(earlier)
         memories = memory.recall(user_text, exclude_session=session_id)
         msgs, persona = build_messages(session, history, user_text, memories)
@@ -87,7 +96,7 @@ def _turn(session_id, user_text):
             db.x("UPDATE messages SET content=? WHERE id=?", (acc, mid))
         stopped = session_id in _cancelled
         violation, pattern = safety.check_boundary(acc, persona["kind"])
-        meta = {}
+        meta = {"captured": captured} if captured else {}
         if violation:
             _event(session_id, "boundary_violation", "warning", f"Detected pattern: '{pattern}'")
             acc = safety.BOUNDARY_REPLACEMENT; meta["safety"] = "boundary"
@@ -96,11 +105,8 @@ def _turn(session_id, user_text):
         if acc and not stopped and not violation:
             try: memory.remember(session_id, user_text, acc)
             except Exception: pass
-        try:                                                   # the inner map grows from what you wrote, not from what the model said
-            graph.extract(session_id, user_text, [m["content"] for m in earlier if m["role"] == "user"])
-        except Exception: pass
     except Exception as e:
-        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), '{"error": true}', mid))
+        db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured}), mid))
     finally:
         _running.discard(session_id); _cancelled.discard(session_id)
         db.x("UPDATE sessions SET status='idle', updated=? WHERE id=?", (db.now(), session_id))

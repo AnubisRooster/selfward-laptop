@@ -1,8 +1,8 @@
 /** Where you are in the app, and how that is written in the address (`#/chats/12`) so Back, Forward and Reload work. */
-export type Tab = 'chats' | 'map' | 'settings';
-export const TABS: Tab[] = ['chats', 'map', 'settings'];
+export type Tab = 'chats' | 'map' | 'insights' | 'settings';
+export const TABS: Tab[] = ['chats', 'map', 'insights', 'settings'];
 
-/** `sessionId` is the open session on the Sessions tab, and the session the Inner Map is limited to (null = all of them). */
+/** `sessionId` is the open session on the Sessions tab, and the session the Inner Map and Insights are limited to (null = all of them). */
 export interface Place { tab: Tab; sessionId: number | null }
 export const HOME: Place = { tab: 'chats', sessionId: null };
 

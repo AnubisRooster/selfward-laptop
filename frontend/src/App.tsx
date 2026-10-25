@@ -3,7 +3,7 @@ import { get, post } from './api';
 import { useHashSync, useLoad, useNav } from './hooks';
 import { Modal, Spin, cx } from './ui';
 import { FeedbackHost } from './feedback';
-import { LifeBuoy, MessageSquare, Network, Settings as SettingsIcon, Lock } from 'lucide-react';
+import { LifeBuoy, MessageSquare, Network, NotebookPen, Settings as SettingsIcon, Lock } from 'lucide-react';
 import { onDesktopEvent } from './desktop';
 import { reloadForUpdate } from './ErrorBoundary';
 import Onboarding from './views/Onboarding';
@@ -11,6 +11,7 @@ import Onboarding from './views/Onboarding';
 const view = (load: () => Promise<{ default: ComponentType<any> }>) => lazy(() => load().catch(e => { if (reloadForUpdate()) return new Promise<never>(() => {}); throw e; }));
 const Chats = view(() => import('./views/Chats'));
 const InnerMap = view(() => import('./views/InnerMap'));
+const Insights = view(() => import('./views/Insights'));
 const Settings = view(() => import('./views/Settings'));
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
@@ -92,7 +93,7 @@ export default function App() {
   if (lockOn && locked) return <><LockScreen onUnlock={() => { try { sessionStorage.setItem('sf.unlocked', '1'); } catch {} setLocked(false); }} /><FeedbackHost /></>;
   if (!st.onboarding_completed) return <><Onboarding status={st} onDone={reload} /><FeedbackHost /></>;
 
-  const Body = { chats: Chats, map: InnerMap, settings: Settings }[tab];
+  const Body = { chats: Chats, map: InnerMap, insights: Insights, settings: Settings }[tab];
   const navBtn = (active: boolean, label: string, Icon: typeof Lock, onClick: () => void) => (
     <button key={label} onClick={onClick} aria-current={active ? 'page' : undefined}
       className={cx('flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] md:flex-none md:flex-row md:gap-2 md:px-3 md:py-2 md:text-sm', active ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200')}>
@@ -104,6 +105,7 @@ export default function App() {
         <div className="hidden px-2 pb-3 pt-1 md:block"><div className="text-lg font-semibold">Selfward</div><div className="text-xs text-zinc-500">Private, on this computer</div></div>
         {navBtn(tab === 'chats', 'Sessions', MessageSquare, () => go('chats'))}
         {navBtn(tab === 'map', 'Inner Map', Network, () => go('map'))}
+        {navBtn(tab === 'insights', 'Insights', NotebookPen, () => go('insights'))}
         <div className="hidden flex-1 md:block" />
         {navBtn(tab === 'settings', 'Settings', SettingsIcon, () => go('settings'))}
         <button onClick={() => setHelp(true)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-zinc-900" title="Crisis lines and emergency numbers"><LifeBuoy size={16} aria-hidden /><span>Get help now</span></button>

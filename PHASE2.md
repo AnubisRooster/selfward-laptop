@@ -10,7 +10,7 @@ Each step below is one commit, ends with tests (stubbed model, temp data folder)
 - **Privacy:** graph stays in the same SQLite file; erased and backed up with the rest (add the tables to `TABLES`).
 - Risk: low. Roughly 400 lines of Python, one view.
 
-## Step 2. Dreams and notes (iPhone: InsightCaptureService, DreamService, NoteService, InsightService, InsightsView)
+## Step 2. Dreams and notes (DONE; the phone's canned per-approach insight paragraphs and SOAP/DAP note templates were left out, as clinician-facing text that doesn't suit a self-reflection app) (iPhone: InsightCaptureService, DreamService, NoteService, InsightService, InsightsView)
 - **Dream capture:** the cue phrases ("I had a dream", "nightmare"…) in a user message create a dream record (narrative, feelings, symbols) and badge the reply, as on the phone. Optional "Interpret" button that asks the model for a Jungian-style reading, clearly labelled as reflection, not diagnosis.
 - **Notes:** one auto "Session summary" note per session (updated each turn from the graph) plus manual notes. Insights tab lists dreams, notes and patterns with search.
 - **Message badges** in the chat view (moon for dream, note icon), matching the phone.

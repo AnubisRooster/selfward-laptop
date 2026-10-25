@@ -5,7 +5,7 @@ import { ago, del, errText, get, patch, post } from '../api';
 import { useLoad, useNav } from '../hooks';
 import { Badge, Btn, Empty, Err, Field, Modal, inputCls, cx } from '../ui';
 import { ask, toast } from '../feedback';
-import { Archive, Square, Trash2 } from 'lucide-react';
+import { Archive, Moon, NotebookPen, Square, Trash2 } from 'lucide-react';
 
 const label = (m: string) => m.replace(/_/g, ' ').replace(/\b(cbt|dbt|act|ifs)\b/i, s => s.toUpperCase()).replace(/^./, c => c.toUpperCase());
 
@@ -33,7 +33,8 @@ function NewSession({ catalog, settings, onClose, onCreated }: { catalog: any; s
   );
 }
 
-function Bubble({ m, who }: { m: any; who: string }) {
+function Bubble({ m, who, sessionId }: { m: any; who: string; sessionId: number }) {
+  const { go } = useNav(); const cap = m.meta?.captured || {};
   const mine = m.role === 'user'; const safety = m.meta?.safety; const failed = m.meta?.error;
   return (
     <div className={cx('flex', mine ? 'justify-end' : 'justify-start')}>
@@ -41,6 +42,9 @@ function Bubble({ m, who }: { m: any; who: string }) {
         {!mine && <div className="mb-0.5 text-[11px] font-medium text-zinc-400">{who}{safety && <span className="ml-2"><Badge tone="amber">{safety === 'boundary' ? 'kept within safe limits' : 'support resources'}</Badge></span>}</div>}
         {m.meta?.streaming && !m.content ? <span className="text-zinc-400">…</span> :
           <div className="prose-sw !text-inherit [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:ml-5 [&_ul]:list-disc [&_ol]:ml-5 [&_ol]:list-decimal"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{m.content}</ReactMarkdown></div>}
+        {(cap.dream || cap.note) && <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {cap.dream && <button onClick={() => go('insights', { sessionId })} className="flex items-center gap-1 rounded-full bg-zinc-700/60 px-2 py-0.5 text-[11px] hover:bg-zinc-700" title="This sounded like a dream, so it was saved. See it in Insights."><Moon size={11} aria-hidden /> Dream saved</button>}
+          {cap.note && <button onClick={() => go('insights', { sessionId })} className="flex items-center gap-1 rounded-full bg-zinc-700/60 px-2 py-0.5 text-[11px] hover:bg-zinc-700" title="A summary note for this session was started. See it in Insights."><NotebookPen size={11} aria-hidden /> Note started</button>}</div>}
         {m.meta?.cancelled && <div className="mt-1 text-[11px] text-zinc-400">stopped</div>}
       </div>
     </div>
@@ -82,7 +86,7 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
       </header>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
         {n === 0 && <Empty icon="✎" title={`Say hello to ${s.persona_name}`}>Whatever is on your mind. This stays on this computer; the model runs here unless you chose a cloud model in Settings.</Empty>}
-        {s.messages.map((m: any) => <Bubble key={m.id} m={m} who={s.persona_name} />)}
+        {s.messages.map((m: any) => <Bubble key={m.id} m={m} who={s.persona_name} sessionId={id} />)}
         <div ref={end} />
       </div>
       <div className="border-t border-zinc-800 p-3">

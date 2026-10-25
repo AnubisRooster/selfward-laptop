@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, personas, safety
+from sf import db, llm, chat, graph, insights, personas, safety
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -107,6 +107,7 @@ def session_patch(sid: int, body: dict):
 def session_del(sid: int):
     for t in ("messages", "memories", "safety_events"): db.x(f"DELETE FROM {t} WHERE session_id=?", (sid,))
     graph.delete_session(sid)
+    for t in ("dreams", "notes"): db.x(f"DELETE FROM {t} WHERE session_id=?", (sid,))
     db.x("DELETE FROM sessions WHERE id=?", (sid,)); return {"ok": True}
 
 @app.post("/api/sessions/{sid}/send")
@@ -151,6 +152,68 @@ def graph_graphml(session_id: int = None):
 def graph_cytoscape(session_id: int = None):
     return Response(json.dumps(graph.cytoscape(session_id), indent=1), media_type="application/json", headers={"Content-Disposition": "attachment; filename=selfward-map.json"})
 
+# ---------- dreams, notes, insights ----------
+def _session_titles(): return {x["id"]: x["title"] for x in db.q("SELECT id,title FROM sessions")}
+
+@app.get("/api/dreams")
+def dreams(session_id: int = None):
+    titles = _session_titles()
+    rows = db.q("SELECT * FROM dreams" + (" WHERE session_id=?" if session_id else "") + " ORDER BY ts DESC", (session_id,) if session_id else ())
+    return [{**insights.dream_row(r), "session_title": titles.get(r["session_id"], "")} for r in rows]
+
+@app.post("/api/dreams")
+def dream_new(body: dict):
+    text = (body.get("narrative") or "").strip()
+    if not text: bad("Write the dream first.")
+    sid = body.get("session_id")
+    if sid is not None and not db.q("SELECT id FROM sessions WHERE id=?", (sid,), one=True): bad("No such session.", 404)
+    low = insights._norm(text)
+    feelings = [CANON_LABEL(w) for w in insights.DREAM_FEELINGS if insights._has(low, w)]
+    return {"id": insights.add_dream(sid, text, list(dict.fromkeys(feelings)), [w for w in insights.SYMBOLS if insights._has(low, w, True)])}
+
+def CANON_LABEL(w): return insights.CANON.get(w, w).lower()
+
+@app.post("/api/dreams/{did}/interpret")
+def dream_interpret(did: int):
+    try: return {"analysis": insights.interpret(did)}
+    except KeyError: bad("No such dream.", 404)
+    except Exception as e: bad(llm.friendly_error(e), 502)
+
+@app.delete("/api/dreams/{did}")
+def dream_del(did: int): db.x("DELETE FROM dreams WHERE id=?", (did,)); return {"ok": True}
+
+@app.get("/api/notes")
+def notes(session_id: int = None):
+    titles = _session_titles()
+    rows = db.q("SELECT * FROM notes" + (" WHERE session_id=?" if session_id else "") + " ORDER BY ts DESC", (session_id,) if session_id else ())
+    return [{**r, "session_title": titles.get(r["session_id"], "")} for r in rows]
+
+@app.post("/api/notes")
+def note_new(body: dict):
+    title, content = (body.get("title") or "").strip(), (body.get("content") or "").strip()
+    if not title and not content: bad("Write something first.")
+    sid = body.get("session_id")
+    if sid is not None and not db.q("SELECT id FROM sessions WHERE id=?", (sid,), one=True): bad("No such session.", 404)
+    return {"id": db.x("INSERT INTO notes(session_id,type,title,content,auto,ts,updated) VALUES(?,?,?,?,0,?,?)", (sid, "journal", title or "Untitled note", content, db.now(), db.now()))}
+
+@app.patch("/api/notes/{nid}")
+def note_patch(nid: int, body: dict):
+    n = db.q("SELECT * FROM notes WHERE id=?", (nid,), one=True)
+    if not n: bad("No such note.", 404)
+    db.x("UPDATE notes SET title=?, content=?, auto=?, updated=? WHERE id=?", (body.get("title", n["title"]), body.get("content", n["content"]), 2 if n["auto"] else 0, db.now(), nid))
+    return {"ok": True}                                   # an automatic note you edit stays yours: it is no longer rewritten
+
+@app.delete("/api/notes/{nid}")
+def note_del(nid: int): db.x("DELETE FROM notes WHERE id=?", (nid,)); return {"ok": True}
+
+@app.get("/api/insights")
+def insights_view(session_id: int = None):
+    n = lambda t: db.q(f"SELECT COUNT(*) n FROM {t}" + (" WHERE session_id=?" if session_id else ""), (session_id,) if session_id else (), one=True)["n"]
+    return {"highlights": insights.highlights(session_id), "dreams": n("dreams"), "notes": n("notes")}
+
+@app.post("/api/insights/rebuild")
+def insights_rebuild(): return {"dreams_found": insights.rebuild()}
+
 # ---------- lock ----------
 def _hash(pin, salt): return hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 200_000).hex()
 def _verify(pin, stored):
@@ -193,7 +256,7 @@ def onboarding_complete(body: dict):
     return {"ok": True}
 
 # ---------- export / backup / erase ----------
-TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges"]
+TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes"]
 def _dump(with_blobs=False):
     out = {"version": 1, "exported": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tables": {}}
     for t in TABLES:
@@ -251,6 +314,7 @@ async def restore(request: Request):
         for k, v in data.get("settings", {}).items():
             if k in db.DEFAULTS and k not in db.SECRET: c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, json.dumps(v)))
     if "graph_nodes" not in data["tables"]: graph.rebuild()          # a backup from before the map existed
+    if "dreams" not in data["tables"]: insights.rebuild()            # ... or before dreams and notes
     return {"restored": {t: len(r) for t, r in data["tables"].items()}}
 
 @app.post("/api/danger/erase")
