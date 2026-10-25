@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, session_id INTEGER, typ
 CREATE INDEX IF NOT EXISTS ix_note_session ON notes(session_id);
 CREATE TABLE IF NOT EXISTS global_memories(id INTEGER PRIMARY KEY, session_id INTEGER, kind TEXT DEFAULT 'semantic', content TEXT, keywords TEXT DEFAULT '', importance REAL DEFAULT 0.5, vec BLOB, manual INTEGER DEFAULT 0, ts REAL);
 CREATE TABLE IF NOT EXISTS narrative(id INTEGER PRIMARY KEY, content TEXT DEFAULT '', previous TEXT DEFAULT '', watermark REAL DEFAULT 0, session_count INTEGER DEFAULT 0, updated REAL);
+CREATE TABLE IF NOT EXISTS moods(id INTEGER PRIMARY KEY, value INTEGER, note TEXT DEFAULT '', ts REAL);
+CREATE INDEX IF NOT EXISTS ix_mood_ts ON moods(ts);
 CREATE TABLE IF NOT EXISTS safety_events(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT, level TEXT, message TEXT, ts REAL);
 """
 

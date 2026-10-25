@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, memory, narrative, openrouter, personas, safety, stt, tts
+from sf import db, llm, chat, graph, insights, memory, mood, narrative, openrouter, personas, safety, stt, tts
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -216,6 +216,19 @@ def graph_graphml(session_id: int = None):
 def graph_cytoscape(session_id: int = None):
     return Response(json.dumps(graph.cytoscape(session_id), indent=1), media_type="application/json", headers={"Content-Disposition": "attachment; filename=selfward-map.json"})
 
+# ---------- mood check-ins ----------
+@app.get("/api/mood")
+def mood_view(days: int = 30): return mood.view(days)
+
+@app.post("/api/mood")
+def mood_log(body: dict):
+    try: mid, crisis = mood.log(body.get("value"), body.get("note", ""))
+    except ValueError as e: bad(str(e))
+    return {"id": mid, "support": crisis}
+
+@app.delete("/api/mood/{mid}")
+def mood_del(mid: int): db.x("DELETE FROM moods WHERE id=?", (mid,)); return {"ok": True}
+
 # ---------- the narrative ----------
 @app.get("/api/narrative")
 def narrative_get(): return narrative.view()
@@ -364,7 +377,7 @@ def onboarding_complete(body: dict):
     return {"ok": True}
 
 # ---------- export / backup / erase ----------
-TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes", "global_memories", "narrative"]
+TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes", "global_memories", "narrative", "moods"]
 def _dump(with_blobs=False):
     out = {"version": 1, "exported": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tables": {}}
     for t in TABLES:

@@ -41,3 +41,8 @@ Each step below is one commit, ends with tests (stubbed model, temp data folder)
 
 ## Suggested order and checkpoints
 1 → 2 → 3 → 4 → 5, stopping after each for you to try it. Steps 1 to 3 can be built in one sitting; Steps 4 and 5 want your testing (narrative quality, microphone).
+
+## Also done
+- Free OpenRouter model picker with the automatic router.
+- Change the model during a session.
+- Mood check-ins (the phone's MoodStore).

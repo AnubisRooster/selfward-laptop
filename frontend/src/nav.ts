@@ -1,6 +1,6 @@
 /** Where you are in the app, and how that is written in the address (`#/chats/12`) so Back, Forward and Reload work. */
-export type Tab = 'chats' | 'map' | 'insights' | 'narrative' | 'settings';
-export const TABS: Tab[] = ['chats', 'map', 'insights', 'narrative', 'settings'];
+export type Tab = 'chats' | 'map' | 'insights' | 'narrative' | 'mood' | 'settings';
+export const TABS: Tab[] = ['chats', 'map', 'insights', 'narrative', 'mood', 'settings'];
 
 /** `sessionId` is the open session on the Sessions tab, and the session the Inner Map and Insights are limited to (null = all of them). */
 export interface Place { tab: Tab; sessionId: number | null }
@@ -15,6 +15,6 @@ export function parseHash(hash: string): Place | null {
   const m = /^#\/([a-z]+)(?:\/(\d+))?$/.exec(hash || '');
   if (!m || !(TABS as string[]).includes(m[1])) return null;
   const tab = m[1] as Tab;
-  if (m[2] !== undefined && (tab === 'settings' || tab === 'narrative')) return null;
+  if (m[2] !== undefined && (tab === 'settings' || tab === 'narrative' || tab === 'mood')) return null;
   return { tab, sessionId: m[2] !== undefined ? Number(m[2]) : null };
 }
