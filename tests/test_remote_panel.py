@@ -41,3 +41,26 @@ class Tailscale(unittest.TestCase):
         self.assertFalse(c.get("/api/remote/tailscale").json()["published"])
 
 if __name__ == "__main__": unittest.main()
+
+
+class InhibitorDiesWithTheProgram(unittest.TestCase):
+    """A "don't sleep" lock must never outlive the program that asked for it (it used to, after a crash or restart)."""
+    def test_the_lock_is_held_by_a_process_that_follows_this_program(self):
+        old = os.environ.pop("SELFWARD_INHIBIT_CMD", None)
+        try:
+            cmd = awake.command()
+            if cmd: self.assertIn(f"--pid={os.getpid()}", cmd); self.assertNotIn("infinity", cmd)
+        finally:
+            if old is not None: os.environ["SELFWARD_INHIBIT_CMD"] = old
+    def test_tail_really_exits_when_the_followed_process_dies(self):
+        import subprocess, time, shutil
+        if not shutil.which("tail"): self.skipTest("no tail")
+        victim = subprocess.Popen(["sleep", "30"]); follower = subprocess.Popen(["tail", f"--pid={victim.pid}", "-f", "/dev/null"])
+        try:
+            time.sleep(0.4); self.assertIsNone(follower.poll()); victim.kill(); victim.wait(); end = time.time() + 5
+            while follower.poll() is None and time.time() < end: time.sleep(0.1)
+            self.assertIsNotNone(follower.poll())
+        finally:
+            for p in (victim, follower):
+                try: p.kill()
+                except Exception: pass
