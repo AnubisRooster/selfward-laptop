@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, personas, safety
+from sf import db, llm, chat, graph, personas, safety
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -106,6 +106,7 @@ def session_patch(sid: int, body: dict):
 @app.delete("/api/sessions/{sid}")
 def session_del(sid: int):
     for t in ("messages", "memories", "safety_events"): db.x(f"DELETE FROM {t} WHERE session_id=?", (sid,))
+    graph.delete_session(sid)
     db.x("DELETE FROM sessions WHERE id=?", (sid,)); return {"ok": True}
 
 @app.post("/api/sessions/{sid}/send")
@@ -119,6 +120,29 @@ def session_cancel(sid: int): return {"ok": chat.cancel(sid)}
 
 @app.get("/api/safety/events")
 def safety_events(): return db.q("SELECT * FROM safety_events ORDER BY ts DESC LIMIT 200")
+
+# ---------- inner map ----------
+def _types(t): return [x for x in (t or "").split(",") if x] or None
+
+@app.get("/api/graph")
+def graph_view(session_id: int = None, types: str = ""): return graph.view(session_id, _types(types))
+
+@app.get("/api/graph/node")
+def graph_node(type: str, label: str, session_id: int = None):
+    d = graph.node_detail(type, label, session_id)
+    if not d: bad("That isn't on the map (any more).", 404)
+    return d
+
+@app.post("/api/graph/rebuild")
+def graph_rebuild(): return {"messages": graph.rebuild()}
+
+@app.get("/api/graph/export/graphml")
+def graph_graphml(session_id: int = None):
+    return Response(graph.graphml(session_id), media_type="application/xml", headers={"Content-Disposition": "attachment; filename=selfward-map.graphml"})
+
+@app.get("/api/graph/export/cytoscape")
+def graph_cytoscape(session_id: int = None):
+    return Response(json.dumps(graph.cytoscape(session_id), indent=1), media_type="application/json", headers={"Content-Disposition": "attachment; filename=selfward-map.json"})
 
 # ---------- lock ----------
 def _hash(pin, salt): return hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 200_000).hex()
@@ -162,7 +186,7 @@ def onboarding_complete(body: dict):
     return {"ok": True}
 
 # ---------- export / backup / erase ----------
-TABLES = ["sessions", "messages", "memories", "safety_events"]
+TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges"]
 def _dump(with_blobs=False):
     out = {"version": 1, "exported": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tables": {}}
     for t in TABLES:
@@ -219,6 +243,7 @@ async def restore(request: Request):
                 c.execute(f"INSERT INTO {t}({','.join(r.keys())}) VALUES({','.join('?' * len(r))})", list(r.values()))
         for k, v in data.get("settings", {}).items():
             if k in db.DEFAULTS and k not in db.SECRET: c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, json.dumps(v)))
+    if "graph_nodes" not in data["tables"]: graph.rebuild()          # a backup from before the map existed
     return {"restored": {t: len(r) for t, r in data["tables"].items()}}
 
 @app.post("/api/danger/erase")

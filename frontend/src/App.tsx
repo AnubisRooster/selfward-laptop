@@ -3,10 +3,11 @@ import { get, post } from './api';
 import { useHashSync, useLoad, useNav } from './hooks';
 import { Modal, Spin, cx } from './ui';
 import { FeedbackHost } from './feedback';
-import { LifeBuoy, MessageSquare, Settings as SettingsIcon, Lock } from 'lucide-react';
+import { LifeBuoy, MessageSquare, Network, Settings as SettingsIcon, Lock } from 'lucide-react';
 import { onDesktopEvent } from './desktop';
 import Onboarding from './views/Onboarding';
 const Chats = lazy(() => import('./views/Chats'));
+const InnerMap = lazy(() => import('./views/InnerMap'));
 const Settings = lazy(() => import('./views/Settings'));
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
@@ -88,7 +89,7 @@ export default function App() {
   if (lockOn && locked) return <><LockScreen onUnlock={() => { try { sessionStorage.setItem('sf.unlocked', '1'); } catch {} setLocked(false); }} /><FeedbackHost /></>;
   if (!st.onboarding_completed) return <><Onboarding status={st} onDone={reload} /><FeedbackHost /></>;
 
-  const Body = { chats: Chats, settings: Settings }[tab];
+  const Body = { chats: Chats, map: InnerMap, settings: Settings }[tab];
   const navBtn = (active: boolean, label: string, Icon: typeof Lock, onClick: () => void) => (
     <button key={label} onClick={onClick} aria-current={active ? 'page' : undefined}
       className={cx('flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] md:flex-none md:flex-row md:gap-2 md:px-3 md:py-2 md:text-sm', active ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200')}>
@@ -99,6 +100,7 @@ export default function App() {
       <nav className="flex shrink-0 gap-0.5 border-b border-zinc-800 bg-zinc-950 p-1.5 md:w-48 md:flex-col md:gap-1 md:border-b-0 md:border-r md:p-3" aria-label="Main">
         <div className="hidden px-2 pb-3 pt-1 md:block"><div className="text-lg font-semibold">Selfward</div><div className="text-xs text-zinc-500">Private, on this computer</div></div>
         {navBtn(tab === 'chats', 'Sessions', MessageSquare, () => go('chats'))}
+        {navBtn(tab === 'map', 'Inner Map', Network, () => go('map'))}
         <div className="hidden flex-1 md:block" />
         {navBtn(tab === 'settings', 'Settings', SettingsIcon, () => go('settings'))}
         <button onClick={() => setHelp(true)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-zinc-900" title="Crisis lines and emergency numbers"><LifeBuoy size={16} aria-hidden /><span>Get help now</span></button>

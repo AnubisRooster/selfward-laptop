@@ -27,12 +27,13 @@ ollama pull llama3.2:3b && ollama pull nomic-embed-text   # chat + memory embedd
 - **Three guides** sharing one memory: the AI Reflection Guide (unnamed by default; 15 approaches: integrated, free form, CBT, DBT, ACT, psychodynamic, humanistic, existential, Gestalt, somatic, narrative, IFS, Adlerian, Jungian, active imagination), the Companion (7 personalities, 4 presences, a name) and the Spiritual Advisor (9 traditions, a name). The prompts are copied from the Swift source by `scripts/port_prompts.py`.
 - **Safety, in code, not in a prompt:** crisis phrases and requests for self-harm methods are answered locally with the crisis lines for your country and never reach the model; replies that diagnose, prescribe or push a faith are replaced and logged. Settings → Safety log shows what was caught.
 - **Memory:** each exchange is embedded (Ollama, `nomic-embed-text`) and recalled in later sessions, across guides. Without the embedding model it falls back to matching words.
+- **Inner Map** (sidebar): the feelings, people, beliefs and events you write about, and how they connect, as a map or a list; filter by kind or session, click a thing to see its connections and the sessions it came up in; export GraphML (Gephi) or Cytoscape JSON. It is built from your own words with plain keyword rules, no model, and crisis messages are kept out. Differences from the phone: variants of one feeling are one node (Anger, not Angry and Anger), words inside other words don't match, a belief is one clause, and the phone's "cycles" are left out because the rules link every feeling and belief in a message both ways, so they were not real patterns. "Rebuild from my sessions" builds the map from sessions written before it existed.
 - Onboarding (notice you must accept, profile and intake that shape every prompt, country, default guide), PIN lock with a pause after repeated wrong PINs, light/dark/system theme,
   Markdown and JSON export, passphrase-encrypted backup and restore, erase everything, optional cloud model with an API key (clearly marked: then your words leave this computer).
 
 ## Not yet ported (next phases)
 
-Knowledge graph and the Inner Map, dreams and notes capture, the Narrative page, insights, hands-free voice (the SmartWard setup of Kokoro + Whisper fits), rolling summaries for very long chats,
+Dreams and notes capture, the Narrative page, insights, hands-free voice (the SmartWard setup of Kokoro + Whisper fits), rolling summaries for very long chats,
 global memory promotion, and the model picker for free OpenRouter models.
 Not carried over: Face ID, iOS backup/background tasks, on-device GGUF/Apple Foundation models (Ollama replaces them).
 

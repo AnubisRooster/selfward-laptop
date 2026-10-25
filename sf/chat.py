@@ -1,6 +1,6 @@
 """One chat turn: safety checks, memory, the persona's prompt, streaming the answer into the database."""
 import json, threading
-from . import db, llm, memory, personas, safety
+from . import db, graph, llm, memory, personas, safety
 from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
@@ -96,6 +96,9 @@ def _turn(session_id, user_text):
         if acc and not stopped and not violation:
             try: memory.remember(session_id, user_text, acc)
             except Exception: pass
+        try:                                                   # the inner map grows from what you wrote, not from what the model said
+            graph.extract(session_id, user_text, [m["content"] for m in earlier if m["role"] == "user"])
+        except Exception: pass
     except Exception as e:
         db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), '{"error": true}', mid))
     finally:

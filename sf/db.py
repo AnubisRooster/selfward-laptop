@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS sessions(
 CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, session_id INTEGER, role TEXT, content TEXT, meta TEXT DEFAULT '{}', ts REAL);
 CREATE INDEX IF NOT EXISTS ix_msg_session ON messages(session_id);
 CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, session_id INTEGER, kind TEXT DEFAULT 'exchange', content TEXT, vec BLOB, ts REAL);
+CREATE TABLE IF NOT EXISTS graph_nodes(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT, label TEXT, strength REAL DEFAULT 1.0, props TEXT DEFAULT '{}', ts REAL);
+CREATE INDEX IF NOT EXISTS ix_gn_session ON graph_nodes(session_id);
+CREATE TABLE IF NOT EXISTS graph_edges(id INTEGER PRIMARY KEY, session_id INTEGER, source INTEGER, target INTEGER, type TEXT, weight REAL DEFAULT 1.0, ts REAL);
+CREATE INDEX IF NOT EXISTS ix_ge_session ON graph_edges(session_id);
 CREATE TABLE IF NOT EXISTS safety_events(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT, level TEXT, message TEXT, ts REAL);
 """
 
