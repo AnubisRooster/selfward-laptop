@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, personas, safety
+from sf import db, llm, chat, graph, insights, memory, personas, safety
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -57,6 +57,10 @@ def put_settings(body: dict):
         if k == "api_key" and v is True: continue          # the UI only ever sees "set / not set"
         if k == "default_persona" and v not in personas.KINDS: bad("Unknown persona.")
         if k == "default_modality" and v not in ALL_MODALITIES: bad("Unknown approach.")
+        if k == "context_tokens":
+            try: v = int(v)
+            except (TypeError, ValueError): bad("The window must be a number of tokens.")
+            if not 2048 <= v <= 262144: bad("Use between 2,048 and 262,144 tokens.")
         db.set_setting(k, v)
     return db.all_settings()
 
@@ -107,6 +111,7 @@ def session_patch(sid: int, body: dict):
 def session_del(sid: int):
     for t in ("messages", "memories", "safety_events"): db.x(f"DELETE FROM {t} WHERE session_id=?", (sid,))
     graph.delete_session(sid)
+    db.x("DELETE FROM global_memories WHERE session_id=?", (sid,))
     for t in ("dreams", "notes"): db.x(f"DELETE FROM {t} WHERE session_id=?", (sid,))
     db.x("DELETE FROM sessions WHERE id=?", (sid,)); return {"ok": True}
 
@@ -151,6 +156,20 @@ def graph_graphml(session_id: int = None):
 @app.get("/api/graph/export/cytoscape")
 def graph_cytoscape(session_id: int = None):
     return Response(json.dumps(graph.cytoscape(session_id), indent=1), media_type="application/json", headers={"Content-Disposition": "attachment; filename=selfward-map.json"})
+
+# ---------- what Selfward remembers ----------
+@app.get("/api/global-memories")
+def global_memories():
+    titles = _session_titles()
+    return [{k: v for k, v in r.items() if k != "vec"} | {"session_title": titles.get(r["session_id"], "")} for r in db.q("SELECT * FROM global_memories ORDER BY importance DESC, ts DESC")]
+
+@app.post("/api/global-memories")
+def global_memory_new(body: dict):
+    try: return {"id": memory.add_manual(body.get("content"))}
+    except ValueError as e: bad(str(e))
+
+@app.delete("/api/global-memories/{mid}")
+def global_memory_del(mid: int): db.x("DELETE FROM global_memories WHERE id=?", (mid,)); return {"ok": True}
 
 # ---------- dreams, notes, insights ----------
 def _session_titles(): return {x["id"]: x["title"] for x in db.q("SELECT id,title FROM sessions")}
@@ -256,7 +275,7 @@ def onboarding_complete(body: dict):
     return {"ok": True}
 
 # ---------- export / backup / erase ----------
-TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes"]
+TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes", "global_memories"]
 def _dump(with_blobs=False):
     out = {"version": 1, "exported": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tables": {}}
     for t in TABLES:

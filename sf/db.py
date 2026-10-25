@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS dreams(id INTEGER PRIMARY KEY, session_id INTEGER, na
 CREATE INDEX IF NOT EXISTS ix_dream_session ON dreams(session_id);
 CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT DEFAULT 'journal', title TEXT, content TEXT, auto INTEGER DEFAULT 0, ts REAL, updated REAL);
 CREATE INDEX IF NOT EXISTS ix_note_session ON notes(session_id);
+CREATE TABLE IF NOT EXISTS global_memories(id INTEGER PRIMARY KEY, session_id INTEGER, kind TEXT DEFAULT 'semantic', content TEXT, keywords TEXT DEFAULT '', importance REAL DEFAULT 0.5, vec BLOB, manual INTEGER DEFAULT 0, ts REAL);
 CREATE TABLE IF NOT EXISTS safety_events(id INTEGER PRIMARY KEY, session_id INTEGER, type TEXT, level TEXT, message TEXT, ts REAL);
 """
 
@@ -36,6 +37,14 @@ def _connect():
 _conn = _connect()
 with _lock:
     _conn.executescript(SCHEMA); _conn.commit()
+def _add_column(table, column, decl):
+    """Journals made by an earlier version get the new column; a fresh one already has it."""
+    with _lock:
+        if column not in [r["name"] for r in _conn.execute(f"PRAGMA table_info({table})")]:
+            _conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}"); _conn.commit()
+
+_add_column("sessions", "summary", "TEXT DEFAULT ''")
+_add_column("sessions", "summary_covered", "INTEGER DEFAULT 0")
 for _f in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"):
     try: os.chmod(_f, 0o600)
     except OSError: pass
@@ -69,6 +78,7 @@ DEFAULTS = {
     "default_persona": "therapist", "default_modality": "integrated", "region": "US",
     "therapist_name": "", "companion_name": "Kai", "spiritual_name": "Sage",
     "companion_personality": "warm", "companion_gender": "unspecified", "spiritual_tradition": "interfaith",
+    "context_tokens": 8192, "remember_across_sessions": True,
     "user_name": "", "user_pronouns": "", "user_age": "", "intake_concerns": "", "intake_history": "", "intake_goals": "",
 }
 SECRET = ("lock_hash", "api_key")

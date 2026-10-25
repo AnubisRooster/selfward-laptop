@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BASE, errText, http, post, put } from '../api';
+import { BASE, ago, del, errText, http, post, put } from '../api';
 import { useLoad } from '../hooks';
 import { Badge, Btn, Card, Err, Field, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
@@ -94,10 +94,13 @@ export default function Settings() {
           <datalist id="installed">{(models?.ollama || []).map((m: string) => <option key={m} value={'ollama_chat/' + m} />)}</datalist></Field>
         <Field label="API key (cloud models only)" hint={v.api_key ? 'A key is saved. Type a new one to replace it, or clear it below.' : 'Stored on this computer only.'}><input type="password" autoComplete="off" className={inputCls} placeholder={v.api_key ? '••••••••' : ''} onChange={e => setKey('api_key', e.target.value)} /></Field>
         <Field label="Memory (embedding) model"><input className={inputCls} value={v.embed_model} onChange={set('embed_model')} /></Field>
-        <div className="flex flex-wrap gap-2"><Btn kind="primary" onClick={() => save(['model', 'embed_model', ...(typeof v.api_key === 'string' ? ['api_key'] : [])])}>Save model</Btn><Btn onClick={test} loading={testing}>Test it</Btn>
+        <Field label="Conversation window (tokens)" hint="How much of a chat the model reads at once. Longer chats are folded into a short recap so the guide still knows what came before. Bigger needs more memory on this computer; 8,192 suits a small model."><input type="number" min={2048} max={262144} step={1024} className={inputCls + ' !w-40'} value={v.context_tokens} onChange={e => setKey('context_tokens', Number(e.target.value))} /></Field>
+        <div className="flex flex-wrap gap-2"><Btn kind="primary" onClick={() => save(['model', 'embed_model', 'context_tokens', ...(typeof v.api_key === 'string' ? ['api_key'] : [])])}>Save model</Btn><Btn onClick={test} loading={testing}>Test it</Btn>
           {v.api_key && <Btn kind="ghost" onClick={async () => { await put('/settings', { values: { api_key: '' } }); reload(); setKey('api_key', false); toast.ok('Key removed'); }}>Remove key</Btn>}</div>
         <div className="flex gap-2 text-xs">{models && <><Badge tone={models.ollama_up ? 'green' : 'amber'}>{models.ollama_up ? 'Ollama running' : 'Ollama not running'}</Badge></>}</div>
       </Card>
+
+      <Remembered v={v} setKey={setKey} save={save} />
 
       <Card className="space-y-3"><h2 className="font-medium">Look</h2>
         <Seg label="Theme" value={theme} options={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]} onChange={t => { setPref(t as ThemePref); setTheme(t as ThemePref); }} /></Card>
@@ -131,5 +134,27 @@ export default function Settings() {
       <DesktopSettings />
       <div className="pb-6 text-center text-xs text-zinc-600">Selfward is a journaling and self-reflection tool, not a licensed therapist.</div>
     </div></div>
+  );
+}
+
+function Remembered({ v, setKey, save }: { v: any; setKey: (k: string, val: any) => void; save: (keys: string[], then?: string) => Promise<void> }) {
+  const { data, reload } = useLoad<any[]>('/global-memories');
+  const [text, setText] = useState(''); const [err, setErr] = useState('');
+  const add = async () => { setErr(''); try { await post('/global-memories', { content: text }); setText(''); reload(); } catch (e) { setErr(errText(e)); } };
+  const remove = async (id: number) => { if (await ask.confirm({ title: 'Forget this?', body: 'It is removed from this computer and won’t be brought up again.', confirmLabel: 'Forget', danger: true })) { await del(`/global-memories/${id}`); reload(); } };
+  return (
+    <Card className="space-y-3"><h2 className="font-medium">What Selfward remembers</h2>
+      <div className="text-xs text-zinc-500">Besides each chat, Selfward keeps the moments that seemed to matter (a parent, a loss, a realisation) and brings them up in later sessions when they are relevant. You decide: see them, add to them, forget any of them, or turn this off.</div>
+      <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={!!v.remember_across_sessions} onChange={async e => { setKey('remember_across_sessions', e.target.checked); await put('/settings', { values: { remember_across_sessions: e.target.checked } }); toast.ok(e.target.checked ? 'Remembering across sessions' : 'Not keeping or using these any more'); }} />
+        <span>Keep and use these across sessions<span className="block text-xs text-zinc-500">Turn off and nothing new is kept and none is used; what is already here stays until you forget it.</span></span></label>
+      <Err>{err}</Err>
+      <div className="flex gap-2"><input className={inputCls} value={text} onChange={e => setText(e.target.value)} placeholder="Something to always keep in mind, e.g. “My sister Ana is my anchor”" aria-label="Add something to remember" onKeyDown={e => { if (e.key === 'Enter' && text.trim()) add(); }} /><Btn onClick={add} disabled={!text.trim()}>Add</Btn></div>
+      {(data || []).length === 0 ? <div className="text-sm text-zinc-500">Nothing kept yet.</div> :
+        <ul className="space-y-2">{data!.map(m => (
+          <li key={m.id} className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-sm">
+            <div className="mb-1 flex items-center justify-between gap-2"><div className="flex items-center gap-1.5 text-xs text-zinc-500"><Badge tone={m.manual ? 'indigo' : m.kind === 'insight' ? 'amber' : 'zinc'}>{m.manual ? 'added by you' : m.kind}</Badge>{ago(m.ts)}{m.session_title && ` · ${m.session_title}`}</div>
+              <button className="text-xs text-zinc-500 hover:text-red-400" onClick={() => remove(m.id)}>Forget</button></div>
+            <p className="whitespace-pre-wrap text-zinc-300">{m.content}</p></li>))}</ul>}
+    </Card>
   );
 }

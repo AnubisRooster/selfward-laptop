@@ -37,6 +37,6 @@ def wait_idle(sid, seconds=10):
     import time
     end = time.time() + seconds
     while time.time() < end:
-        if sid not in chat._running: return
+        if sid not in chat._running: chat.join_background(); return
         time.sleep(0.02)
     raise AssertionError("the turn never finished")

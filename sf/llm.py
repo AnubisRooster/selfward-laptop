@@ -5,9 +5,14 @@ from . import db
 
 def is_local(model): return model.startswith("ollama")
 
+def context_tokens():
+    try: return max(2048, int(db.get_setting("context_tokens") or 8192))
+    except (TypeError, ValueError): return 8192
+
 def _kwargs(model):
     kw = {"model": model}
-    if is_local(model): kw["api_base"] = db.get_setting("ollama_base")
+    # Ollama's own default window is small (often 4,096 tokens) and it silently cuts the START of a long prompt, which is where the persona and its rules are.
+    if is_local(model): kw["api_base"] = db.get_setting("ollama_base"); kw["num_ctx"] = context_tokens()
     elif db.get_setting("api_key"): kw["api_key"] = db.get_setting("api_key")
     return kw
 

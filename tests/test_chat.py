@@ -59,8 +59,9 @@ class Chat(unittest.TestCase):
         self.assertEqual(chat._title("I have been feeling anxious about work lately and cannot switch off in the evenings"), "I have been feeling anxious about work lately and cannot…")
         self.assertEqual(chat._title("Short one"), "Short one")
     def test_history_budget_keeps_the_newest(self):
+        from sf import compact
         msgs = [{"role": "user", "content": "x" * 5000} for _ in range(6)] + [{"role": "user", "content": "newest"}]
-        kept = chat.retained_history(msgs, budget=12000)
+        kept = compact.retained(msgs, budget=3000)
         self.assertEqual(kept[-1]["content"], "newest"); self.assertLess(len(kept), len(msgs)); self.assertGreaterEqual(len(kept), 3)
 
 class Memory(unittest.TestCase):

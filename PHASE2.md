@@ -16,7 +16,7 @@ Each step below is one commit, ends with tests (stubbed model, temp data folder)
 - **Message badges** in the chat view (moon for dream, note icon), matching the phone.
 - Needs Step 1 for the summary note. Risk: low.
 
-## Step 3. Global memory and long-chat summaries (iPhone: GlobalMemoryService, ConversationCompactor)
+## Step 3. Global memory and long-chat summaries (DONE; adds a window setting passed to Ollama as num_ctx, a plausibility check on recaps, and a switch plus a list in Settings) (iPhone: GlobalMemoryService, ConversationCompactor)
 - **Global memory:** tiered keyword importance (0.45 / 0.65 / 0.85) promotes personally significant statements to a durable memory that is always eligible for recall, ranked by similarity and importance. View and delete them in Settings (the user must be able to see and remove what the app "remembers").
 - **Rolling summary:** when history exceeds the budget, summarise the older turns with the model into `sessions.summary` and keep recent turns verbatim, replacing today's plain truncation. Fall back to truncation if the summariser fails.
 - Risk: medium (prompt quality with a 3B model). Tests with a stubbed summariser, then a real long-chat run.

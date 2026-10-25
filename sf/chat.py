@@ -1,25 +1,15 @@
 """One chat turn: safety checks, memory, the persona's prompt, streaming the answer into the database."""
 import json, threading
-from . import db, graph, insights, llm, memory, personas, safety
+from . import compact, db, graph, insights, llm, memory, personas, safety
 from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
-HISTORY_CHARS = 14000          # about 3,500 tokens of earlier turns; older ones drop off the front
 
 def new_session(persona=None, modality=None, title=None):
     persona = persona if persona in personas.KINDS else (db.get_setting("default_persona") or "therapist")
     modality = modality if modality in MODALITY_PROMPTS else (db.get_setting("default_modality") or "integrated")
     title = title or "New session"
     return db.x("INSERT INTO sessions(title,persona,modality,created,updated) VALUES(?,?,?,?,?)", (title, persona, modality, db.now(), db.now()))
-
-def retained_history(msgs, budget=HISTORY_CHARS, keep=3):
-    """The newest turns that fit the budget (always at least `keep`)."""
-    out, used = [], 0
-    for m in reversed(msgs):
-        used += len(m["content"])
-        if used > budget and len(out) >= keep: break
-        out.append(m)
-    return list(reversed(out))
 
 def _store(session_id, role, content, meta=None):
     return db.x("INSERT INTO messages(session_id,role,content,meta,ts) VALUES(?,?,?,?,?)", (session_id, role, content, json.dumps(meta or {}), db.now()))
@@ -63,13 +53,53 @@ def _touch(session_id, first_text):
     if s and s["title"] == "New session": db.x("UPDATE sessions SET title=? WHERE id=?", (_title(first_text), session_id))
     db.x("UPDATE sessions SET updated=? WHERE id=?", (db.now(), session_id))
 
-def build_messages(session, history, user_text, memories):
+def build_messages(session, history, user_text, memories, recap="", important=(), older=()):
     persona = personas.resolve(session["persona"])
     msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "")}]
+    if important: msgs.append({"role": "system", "content": "Things that have mattered to this person across sessions:\n" + "\n".join("- " + m for m in important)})
     if memories: msgs.append({"role": "system", "content": "Relevant context from previous sessions:\n" + "\n".join("- " + m for m in memories)})
+    if older: msgs.append({"role": "system", "content": "Earlier in this same conversation (no longer shown in full):\n" + "\n".join("- " + m for m in older)})
+    if recap: msgs.append({"role": "system", "content": "Ongoing conversation recap (earlier turns, condensed — treat as verbatim history):\n" + recap})
     msgs += [{"role": m["role"], "content": m["content"]} for m in history]
     msgs.append({"role": "user", "content": user_text})
     return msgs, persona
+
+def fit(session, earlier, user_text, memories, important):
+    """Builds the prompt so it fits the model's window: older turns become a recap, then memories and turns are dropped until it fits."""
+    window = llm.context_tokens(); persona = personas.resolve(session["persona"])
+    system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "")
+    older = []
+    budget = compact.history_budget(window, system_text, "\n".join(memories) + "\n".join(important) + "x" * 1500, user_text)    # room for what recall may add
+    recap, history = compact.for_prompt(session["id"], earlier, budget)
+    if history and len(history) < len(earlier) and history[0].get("ts"):            # the chat outgrew the window: bring back the earlier exchanges that bear on this message
+        try: older = memory.recall_in_session(user_text, session["id"], history[0]["ts"])
+        except Exception: older = []
+    def build(): return build_messages(session, history, user_text, memories, recap, important, older)
+    msgs, persona = build()
+    while sum(compact.tokens(m["content"]) + 4 for m in msgs) > window * 0.85:      # an estimate can undercount: shrink until it fits
+        if older: older = older[:-1]
+        elif important: important = important[:-1]
+        elif memories: memories = memories[:-1]
+        elif history: history = history[1:]
+        elif recap: recap = ""
+        else: break
+        msgs, persona = build()
+    return msgs, persona
+
+_background = []        # recap refreshes in flight (tests wait on them)
+
+def _refresh_recap(session, everything):
+    """After the answer: folds older turns into the stored recap, so the next long turn has it. A failure only means the next turn trims instead."""
+    try:
+        persona = personas.resolve(session["persona"])
+        budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or ""), "x" * 2400, "x" * 400)
+        compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
+    except Exception as e:
+        print(f"[recap skipped] {type(e).__name__}: {str(e)[:150]}", flush=True)
+
+def join_background(timeout=30):
+    for t in list(_background): t.join(timeout)
+    _background[:] = [t for t in _background if t.is_alive()]
 
 def _capture(session_id, user_text, earlier):
     """What your message adds besides the answer: the inner map, a dream record, the session's summary note. Never blocks the answer."""
@@ -83,12 +113,13 @@ def _turn(session_id, user_text):
     session = db.q("SELECT * FROM sessions WHERE id=?", (session_id,), one=True)
     mid = _store(session_id, "assistant", "", {"streaming": True}); captured = {}
     try:
-        earlier = db.q("SELECT role,content FROM messages WHERE session_id=? AND id<? AND role IN ('user','assistant') AND content!='' ORDER BY id", (session_id, mid))
+        earlier = db.q("SELECT role,content,ts FROM messages WHERE session_id=? AND id<? AND role IN ('user','assistant') AND content!='' ORDER BY id", (session_id, mid))
         earlier = earlier[:-1] if earlier and earlier[-1]["role"] == "user" and earlier[-1]["content"] == user_text else earlier   # this turn's own message is added last
         captured = _capture(session_id, user_text, earlier)       # from your words alone, so it happens even if the model is down
-        history = retained_history(earlier)
         memories = memory.recall(user_text, exclude_session=session_id)
-        msgs, persona = build_messages(session, history, user_text, memories)
+        important = memory.recall_global(user_text, exclude_session=session_id)
+        memories = [m for m in memories if m not in important]          # said once, under the stronger heading
+        msgs, persona = fit(session, earlier, user_text, memories, important)
         acc = ""
         for piece in llm.stream(msgs, model=llm.current_model(session)):
             if session_id in _cancelled: break
@@ -103,8 +134,12 @@ def _turn(session_id, user_text):
         if stopped: meta["cancelled"] = True
         db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (acc or ("(stopped)" if stopped else "(no answer)"), json.dumps(meta), mid))
         if acc and not stopped and not violation:
-            try: memory.remember(session_id, user_text, acc)
+            try:
+                memory.remember(session_id, user_text, acc)
+                memory.promote(session_id, user_text, acc)
             except Exception: pass
+            t = threading.Thread(target=_refresh_recap, args=(session, earlier + [{"role": "user", "content": user_text}, {"role": "assistant", "content": acc}]), daemon=True)
+            _background.append(t); t.start()
     except Exception as e:
         db.x("UPDATE messages SET content=?, meta=? WHERE id=?", (llm.friendly_error(e), json.dumps({"error": True, "captured": captured}), mid))
     finally:
