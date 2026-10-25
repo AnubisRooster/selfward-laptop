@@ -1,14 +1,17 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { ComponentType, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { get, post } from './api';
 import { useHashSync, useLoad, useNav } from './hooks';
 import { Modal, Spin, cx } from './ui';
 import { FeedbackHost } from './feedback';
 import { LifeBuoy, MessageSquare, Network, Settings as SettingsIcon, Lock } from 'lucide-react';
 import { onDesktopEvent } from './desktop';
+import { reloadForUpdate } from './ErrorBoundary';
 import Onboarding from './views/Onboarding';
-const Chats = lazy(() => import('./views/Chats'));
-const InnerMap = lazy(() => import('./views/InnerMap'));
-const Settings = lazy(() => import('./views/Settings'));
+// A view that can't be fetched means this window predates the installed build: reload to pick the new one up.
+const view = (load: () => Promise<{ default: ComponentType<any> }>) => lazy(() => load().catch(e => { if (reloadForUpdate()) return new Promise<never>(() => {}); throw e; }));
+const Chats = view(() => import('./views/Chats'));
+const InnerMap = view(() => import('./views/InnerMap'));
+const Settings = view(() => import('./views/Settings'));
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPin] = useState(''); const [err, setErr] = useState('');

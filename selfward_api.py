@@ -121,6 +121,13 @@ def session_cancel(sid: int): return {"ok": chat.cancel(sid)}
 @app.get("/api/safety/events")
 def safety_events(): return db.q("SELECT * FROM safety_events ORDER BY ts DESC LIMIT 200")
 
+# ---------- window errors ----------
+@app.post("/api/client-log")
+def client_log(body: dict):
+    """The window reports what went wrong on screen, so a blank page leaves a note in the log (never message text)."""
+    print(f"[window {str(body.get('kind'))[:20]}] {str(body.get('url'))[:200]}\n{str(body.get('text'))[:4000]}", flush=True)
+    return {"ok": True}
+
 # ---------- inner map ----------
 def _types(t): return [x for x in (t or "").split(",") if x] or None
 
