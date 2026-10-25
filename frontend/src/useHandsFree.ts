@@ -27,7 +27,7 @@ export function useHandsFree(a: Args) {
   const [on, setOn] = useState(false); const [server, setServer] = useState<string>('off'); const [error, setError] = useState('');
   const sp = useSpeech();
   const cursor = useRef(0); const voiceTurn = useRef(false); const wasRunning = useRef(false); const latest = useRef(a); latest.current = a;
-  const wasSpeaking = useRef(false);
+  const wasSpeaking = useRef(false); const pauseMs = useRef(800);
   const mic = useRef<BrowserMic | null>(null); const queue = useRef<Promise<void>>(Promise.resolve()); const transcribing = useRef(0); const [busy, setBusy] = useState(false);
 
   useEffect(() => { if (takeAudioChat()) setOn(true); }, []);
@@ -40,7 +40,7 @@ export function useHandsFree(a: Args) {
     if (!on) { if (!onPhone) post('/voice/stop').catch(() => {}); setServer('off'); return; }
     let alive = true; setError(''); setServer('loading');
     if (onPhone) {            // the phone's own microphone: each sentence is cut out on the phone and sent to the laptop to be turned into text
-      const m = new BrowserMic(); mic.current = m;
+      const m = new BrowserMic(pauseMs.current); mic.current = m;
       const sendClip = (audio: Float32Array) => {
         transcribing.current++; setBusy(true);
         queue.current = queue.current.then(async () => {
@@ -107,5 +107,5 @@ export function useHandsFree(a: Args) {
   }, [a.messages.length, on]);
 
   const status: HandsFreeStatus = !on ? 'off' : sp.on ? 'speaking' : a.running || busy ? 'thinking' : server === 'loading' ? 'loading' : server === 'hearing' ? 'hearing' : 'listening';
-  return { on, status, error, toggle: () => { if (on) turnOff(); else { speech.unlock(); setError(''); setOn(true); } }, turnOff };
+  return { on, status, error, toggle: () => { if (on) turnOff(); else { speech.unlock(); setError(''); get('/settings').then(st => { if (Number.isFinite(st?.voice_pause_ms)) pauseMs.current = st.voice_pause_ms; }).catch(() => {}).finally(() => setOn(true)); } }, turnOff };
 }

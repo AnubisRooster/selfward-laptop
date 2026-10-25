@@ -184,6 +184,8 @@ Then quit Selfward from its tray icon and open it again. An open window that was
 | A white page after an update | Press Ctrl+R. It also reloads by itself once. If it keeps happening, the details are in the log. |
 | "Selfward's backend isn't running" | Quit from the tray icon and open it again. The log is `~/.local/state/selfward/api.log`. |
 | No sound when reading aloud | Check Settings → Voice. If the natural voice is not installed, the browser voice is used. |
+| Hands-free stays open ("Hearing you…") for a long time | Usually the room: a fan, music or a vacuum that came on while you were quiet. It now lets go within a few seconds, but a very noisy room still confuses it; move the microphone or quiet the noise. Also see the next row. |
+| Hands-free cuts you off, or waits too long after you stop | Settings → Voice → **Pause that ends your turn** (0.3 to 1.5 s, 0.8 by default). Shorter is snappier, longer waits while you think. It applies the next time you switch hands-free on. After the pause, turning speech into text takes a few seconds on a laptop; a smaller speech model is faster: `MODEL=base.en ~/SmartWardApp/stt/setup.sh`. |
 | Hands-free says speech input isn't installed | Run `~/SmartWardApp/stt/setup.sh` and `sudo apt install alsa-utils`. |
 | The phone can't connect | Is the laptop awake and Selfward running? Tailscale connected on both? `tailscale serve status` should show port 8443 pointing at 127.0.0.1:8100. |
 | "This Tailscale account isn't allowed" | The login in Settings → Remote access must be the account your phone uses. |

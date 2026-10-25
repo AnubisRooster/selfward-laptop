@@ -6,8 +6,10 @@ export type MicState = 'loading' | 'listening' | 'hearing';
 /** The phone's own microphone: cuts what you say into sentences on the phone and hands each one over as 16 kHz samples. Nothing leaves the phone from here. */
 export class BrowserMic {
   private ctx?: AudioContext; private stream?: MediaStream; private node?: ScriptProcessorNode; private src?: MediaStreamAudioSourceNode;
-  private ep = new Endpointer(); private pending = new Float32Array(0); private carry = { pos: 0 };
+  private ep: Endpointer; private pending = new Float32Array(0); private carry = { pos: 0 };
   private paused = false; private resumedAt = 0; private last: MicState = 'loading';
+
+  constructor(silenceMs = 800) { this.ep = new Endpointer({ silenceMs }); }
 
   async start(onState: (s: MicState) => void, onUtterance: (audio: Float32Array) => void) {
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });

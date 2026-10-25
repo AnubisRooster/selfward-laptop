@@ -47,6 +47,16 @@ class Speech(unittest.TestCase):
 
 FAKE_WORKER = os.path.join(os.path.dirname(__file__), "fixtures", "fake_worker.py")
 
+class PauseLength(unittest.TestCase):
+    def setUp(self): reset()
+    def test_the_pause_that_ends_your_turn_is_a_validated_setting_that_reaches_the_listener(self):
+        for bad in (100, 5000, "800", True, 0.5): self.assertEqual(c.put("/api/settings", json={"values": {"voice_pause_ms": bad}}).status_code, 400, bad)
+        self.assertEqual(c.put("/api/settings", json={"values": {"voice_pause_ms": 500}}).status_code, 200)
+        cmd = stt.command(); self.assertEqual(cmd[cmd.index("--silence-ms") + 1], "500")
+        c.put("/api/settings", json={"values": {"voice_pause_ms": 1200}}); cmd = stt.command(); self.assertEqual(cmd[cmd.index("--silence-ms") + 1], "1200")
+    def test_a_missing_or_odd_stored_value_falls_back_to_the_default(self):
+        db.set_setting("voice_pause_ms", "oops"); cmd = stt.command(); self.assertEqual(cmd[cmd.index("--silence-ms") + 1], "800")
+
 class PhoneRecordings(unittest.TestCase):
     """A phone cuts its own speech into sentences and posts each one; the laptop's speech model turns it into text."""
     def setUp(self): reset(); os.environ["SELFWARD_STT_CMD"] = f"{sys.executable} {FAKE}"; os.environ["SELFWARD_STT_WORKER_CMD"] = f"{sys.executable} {FAKE_WORKER}"; stt.reset()

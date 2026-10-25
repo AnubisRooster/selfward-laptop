@@ -27,3 +27,20 @@ describe('audio for the laptop', () => {
     expect(a.length + b.length).toBeGreaterThanOrEqual(Math.floor(8192 / 3) - 1); expect(a.every(x => x === 1)).toBe(true);
   });
 });
+
+describe('a room that gets noisier', () => {
+  it('does not hold the microphone open to the limit, and ends within a few seconds', () => {
+    const ev: any[] = []; const ep = new Endpointer(); let i = 0;
+    for (const f of [...frames(2, 0.0003), ...frames(40, 0.01)]) { const e = ep.feed(f); if (e) ev.push({ at: i / 50, ...e }); i++; }
+    expect(ev.map(e => e.type)).toEqual(['start', 'end']); expect(ev[1].audio).toBeNull(); expect(ev[1].at).toBeLessThan(6);
+  });
+  it('still hears you talk over it, and keeps what you said', () => {
+    const speech = Array.from({ length: 200 }, (_, k) => Float32Array.from({ length: FRAME }, () => (Math.random() * 2 - 1) * (0.05 + 0.2 * Math.abs(Math.sin(k / 6)))));       // moves by many dB, like speech
+    const ev = run(new Endpointer(), [...frames(2, 0.0003), ...speech, ...frames(4, 0.01)]);
+    expect(ev.filter(e => e.type === 'end' && e.audio).length).toBe(1); expect(ev.find(e => e.audio).audio.length / 16000).toBeGreaterThan(3);
+  });
+  it('a shorter pause ends a turn sooner', () => {
+    const endAt = (silenceMs: number) => { const ep = new Endpointer({ silenceMs }); let i = 0; for (const f of [...frames(2, 0.0003), ...frames(1.5, 0.15).map((x, k) => x.map(v => v * (0.4 + 0.6 * Math.abs(Math.sin(k / 5))))), ...frames(3, 0.0003)]) { const e = ep.feed(f); if (e && e.type === 'end') return i; i++; } return -1; };
+    expect(endAt(400)).toBeLessThan(endAt(1200)); expect(endAt(400)).toBeGreaterThan(0);
+  });
+});

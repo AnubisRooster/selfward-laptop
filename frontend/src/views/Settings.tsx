@@ -218,7 +218,7 @@ function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => voi
   const { data: tts } = useLoad<any>('/tts/status', undefined, 5000);
   const { data: mic } = useLoad<any>('/voice/status');
   const { data: catalog } = useLoad<any>('/catalog');
-  const [err, setErr] = useState(''); const [busy, setBusy] = useState(''); const [rate, setRate] = useState<number>(Number(v.voice_rate) || 1);
+  const [err, setErr] = useState(''); const [busy, setBusy] = useState(''); const [rate, setRate] = useState<number>(Number(v.voice_rate) || 1); const [pause, setPause] = useState<number>(Number(v.voice_pause_ms) || 800);
   const up = !!tts?.up; const voices: string[] = tts?.voices || []; const engine: string = v.tts_engine || 'auto'; const natural = engine === 'kokoro' || (engine === 'auto' && up);
   const save = async (values: any) => { setErr(''); try { await put('/settings', { values }); Object.entries(values).forEach(([k, x]) => setKey(k, x)); } catch (e) { setErr(errText(e)); } };
   const listen = async (voice: string, key: string) => { setErr(''); setBusy(key); try { const m = await speech.sample(natural ? 'kokoro' : 'browser', voice || v.tts_voice || 'af_heart', rate); if (m) setErr(m); } catch (e) { setErr(errText(e)); } setBusy(''); };
@@ -239,6 +239,9 @@ function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => voi
             <Btn small onClick={() => listen(v['voice_' + id], id)} loading={busy === id}>▶</Btn></div>)}</div></>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speaking rate {rate.toFixed(2)}×</span>
         <input type="range" min="0.5" max="2" step="0.05" aria-label="Speaking rate" value={rate} onChange={e => setRate(Number(e.target.value))} onMouseUp={() => save({ voice_rate: rate })} onKeyUp={() => save({ voice_rate: rate })} onTouchEnd={() => save({ voice_rate: rate })} /></div>
+      <div className="space-y-1"><div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Pause that ends your turn: {(pause / 1000).toFixed(1)} s</span>
+        <input type="range" min="300" max="1500" step="100" aria-label="Pause that ends your turn" value={pause} onChange={e => setPause(Number(e.target.value))} onMouseUp={() => save({ voice_pause_ms: pause })} onKeyUp={() => save({ voice_pause_ms: pause })} onTouchEnd={() => save({ voice_pause_ms: pause })} /></div>
+        <div className="text-xs text-zinc-500">How long you stay quiet before hands-free sends what you said. Shorter is snappier but may cut you off when you stop to think; longer waits for you. It applies the next time you switch hands-free on. If it stays open much longer than this, the room is probably noisy (a fan, music): see the Help guide → Troubleshooting. After the pause, turning your words into text takes a few seconds on a laptop.</div></div>
       {catalog && <div className="text-xs text-zinc-500">Start a session with <b>Talk</b> on the Sessions list, or press the microphone in a session.</div>}
     </Card>
   );

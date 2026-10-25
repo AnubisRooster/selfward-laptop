@@ -86,5 +86,7 @@ def validate_setting(key: str, value, incoming: dict | None = None):
     elif key == "tts_voice" or key in GUIDE_VOICES:
         if value != "" or key == "tts_voice":
             if not isinstance(value, str) or not VOICE_RE.match(value): raise ValueError("That isn't a voice name like af_heart.")
+    elif key == "voice_pause_ms":
+        if not isinstance(value, int) or isinstance(value, bool) or not (300 <= value <= 2000): raise ValueError("The pause must be between 0.3 and 2 seconds.")
     elif key == "voice_rate":
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not (SPEED[0] <= value <= SPEED[1]): raise ValueError("Speed must be between 0.5 and 2.")

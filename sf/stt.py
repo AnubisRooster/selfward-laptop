@@ -3,7 +3,7 @@ only while the interface is asking for it, and turns what it prints into events 
 The listener is SmartWard's (see tts.voice_home); nothing is recorded to disk and nothing leaves this computer."""
 import json, os, subprocess, sys, threading, time
 from pathlib import Path
-from . import tts
+from . import db, tts
 
 def _dir():
     home = tts.voice_home()
@@ -26,7 +26,8 @@ def model_name():
 def command():
     """What to run. SELFWARD_STT_CMD replaces it in tests."""
     if os.environ.get("SELFWARD_STT_CMD"): return os.environ["SELFWARD_STT_CMD"].split()
-    return [str(_dir() / ".venv/bin/python"), str(_dir() / "listen.py"), "--model", str(_dir() / "models" / model_name())]
+    pause = db.get_setting("voice_pause_ms"); pause = pause if isinstance(pause, int) and 300 <= pause <= 2000 else 800      # how long a silence ends your turn
+    return [str(_dir() / ".venv/bin/python"), str(_dir() / "listen.py"), "--model", str(_dir() / "models" / model_name()), "--silence-ms", str(pause)]
 
 
 def installed():
