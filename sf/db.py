@@ -79,6 +79,7 @@ DEFAULTS = {
     "default_persona": "therapist", "default_modality": "integrated", "region": "US",
     "therapist_name": "", "companion_name": "Kai", "spiritual_name": "Sage",
     "companion_personality": "warm", "companion_gender": "unspecified", "spiritual_tradition": "interfaith",
+    "tts_engine": "auto", "tts_url": "http://127.0.0.1:8880", "tts_voice": "af_heart", "voice_rate": 1.0, "voice_therapist": "", "voice_companion": "", "voice_spiritual": "", "voice_name": "",
     "context_tokens": 8192, "remember_across_sessions": True,
     "user_name": "", "user_pronouns": "", "user_age": "", "intake_concerns": "", "intake_history": "", "intake_goals": "",
 }

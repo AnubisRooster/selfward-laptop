@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BASE, ago, del, errText, get, http, post, put } from '../api';
-import { useLoad } from '../hooks';
+import { speech, useLoad } from '../hooks';
 import { Badge, Btn, Card, Err, Field, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
 import { ThemePref, readPref, setPref } from '../theme';
@@ -100,6 +100,8 @@ export default function Settings() {
         <div className="flex gap-2 text-xs">{models && <><Badge tone={models.ollama_up ? 'green' : 'amber'}>{models.ollama_up ? 'Ollama running' : 'Ollama not running'}</Badge></>}</div>
       </Card>
 
+      <VoiceCard v={v} setKey={setKey} />
+
       <OpenRouterPicker v={v} setKey={setKey} />
 
       <Remembered v={v} setKey={setKey} save={save} />
@@ -190,6 +192,49 @@ function OpenRouterPicker({ v, setKey }: { v: any; setKey: (k: string, val: any)
                 <Btn small kind="primary" onClick={() => choose(m.model, m.name)} disabled={v.model === m.model || !v.api_key}>Use</Btn></div></li>))}</ul>
         </div>
       </details>
+    </Card>
+  );
+}
+
+const VOICE_GROUPS: Record<string, string> = {
+  af: 'American English · female', am: 'American English · male', bf: 'British English · female', bm: 'British English · male',
+  ef: 'Spanish · female', em: 'Spanish · male', ff: 'French · female', hf: 'Hindi · female', hm: 'Hindi · male', if: 'Italian · female', im: 'Italian · male',
+  jf: 'Japanese · female', jm: 'Japanese · male', pf: 'Portuguese · female', pm: 'Portuguese · male', zf: 'Mandarin · female', zm: 'Mandarin · male',
+};
+const voiceLabel = (v: string) => { const n = v.slice(3); return n.charAt(0).toUpperCase() + n.slice(1); };
+function VoiceOptions({ voices, current }: { voices: string[]; current: string }) {
+  const names = current && !voices.includes(current) ? [current, ...voices] : voices; const groups = new Map<string, string[]>();
+  for (const x of names) { const g = VOICE_GROUPS[x.slice(0, 2)] || 'Other'; groups.set(g, [...(groups.get(g) || []), x]); }
+  const order = Object.values(VOICE_GROUPS);
+  return <>{[...groups.entries()].sort((a, b) => (order.indexOf(a[0]) + 1 || 99) - (order.indexOf(b[0]) + 1 || 99)).map(([g, vs]) => <optgroup key={g} label={g}>{vs.map(x => <option key={x} value={x}>{voiceLabel(x)}</option>)}</optgroup>)}</>;
+}
+
+function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => void }) {
+  const { data: tts } = useLoad<any>('/tts/status', undefined, 5000);
+  const { data: mic } = useLoad<any>('/voice/status');
+  const { data: catalog } = useLoad<any>('/catalog');
+  const [err, setErr] = useState(''); const [busy, setBusy] = useState(''); const [rate, setRate] = useState<number>(Number(v.voice_rate) || 1);
+  const up = !!tts?.up; const voices: string[] = tts?.voices || []; const engine: string = v.tts_engine || 'auto'; const natural = engine === 'kokoro' || (engine === 'auto' && up);
+  const save = async (values: any) => { setErr(''); try { await put('/settings', { values }); Object.entries(values).forEach(([k, x]) => setKey(k, x)); } catch (e) { setErr(errText(e)); } };
+  const listen = async (voice: string, key: string) => { setErr(''); setBusy(key); try { const m = await speech.sample(natural ? 'kokoro' : 'browser', voice || v.tts_voice || 'af_heart', rate); if (m) setErr(m); } catch (e) { setErr(errText(e)); } setBusy(''); };
+  const guides: [string, string][] = [['therapist', v.therapist_name || 'AI Reflection Guide'], ['companion', v.companion_name || 'Companion'], ['spiritual', v.spiritual_name || 'Spiritual Advisor']];
+  return (
+    <Card className="space-y-3"><h2 className="font-medium">Voice</h2>
+      <div className="text-xs text-zinc-500">Reading aloud and hands-free talking both run on this computer: the voice (Kokoro) and the listening (Whisper) never send audio or words anywhere. The microphone is open only while hands-free is on in a session, and it closes when you leave, lock, or hide the window.</div>
+      <Err>{err}</Err>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Natural voice</span>{up ? <Badge tone="green">Running · {voices.length} voices</Badge> : tts?.installed ? <Badge tone="amber">Starting… (it starts by itself)</Badge> : <Badge tone="red">Not installed</Badge>}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speech input (hands-free)</span>{mic?.installed ? <Badge tone="green">Installed · {mic.model}</Badge> : <Badge tone="red">Not installed</Badge>}</div>
+      {(!tts?.installed || (mic && !mic.installed)) && <div className="text-xs text-zinc-500">Selfward uses the voice and listening models from SmartWard’s folder (about 1 GB, so they aren’t copied). {tts?.home ? <>Found: <code>{tts.home}</code>.</> : <>None found: install SmartWard’s <code>tts/setup.sh</code> and <code>stt/setup.sh</code>, or set <code>SELFWARD_VOICE_HOME</code> to a folder that has them.</>} Without them, the browser’s own voice reads aloud and hands-free is unavailable.</div>}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Voice</span><Seg label="Voice engine" value={engine} onChange={x => save({ tts_engine: x })} options={[['auto', 'Automatic'], ['kokoro', 'Natural'], ['browser', 'Browser']]} /></div>
+      {natural && <>
+        <Field label="Default voice"><div className="flex gap-2"><select className={inputCls} value={v.tts_voice || 'af_heart'} onChange={e => save({ tts_voice: e.target.value })}><VoiceOptions voices={voices} current={v.tts_voice || 'af_heart'} /></select><Btn onClick={() => listen(v.tts_voice, 'default')} loading={busy === 'default'}>▶ Listen</Btn></div></Field>
+        <div className="space-y-2"><div className="text-xs font-medium text-zinc-400">A voice for each guide</div>
+          {guides.map(([id, name]) => <div key={id} className="flex flex-wrap items-center gap-2"><span className="w-44 truncate text-sm">{name}</span>
+            <select className={inputCls + ' !w-auto flex-1'} aria-label={`Voice for ${name}`} value={v['voice_' + id] || ''} onChange={e => save({ ['voice_' + id]: e.target.value })}><option value="">Default voice</option><VoiceOptions voices={voices} current={v['voice_' + id] || ''} /></select>
+            <Btn small onClick={() => listen(v['voice_' + id], id)} loading={busy === id}>▶</Btn></div>)}</div></>}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speaking rate {rate.toFixed(2)}×</span>
+        <input type="range" min="0.5" max="2" step="0.05" aria-label="Speaking rate" value={rate} onChange={e => setRate(Number(e.target.value))} onMouseUp={() => save({ voice_rate: rate })} onKeyUp={() => save({ voice_rate: rate })} onTouchEnd={() => save({ voice_rate: rate })} /></div>
+      {catalog && <div className="text-xs text-zinc-500">Start a session with <b>Talk</b> on the Sessions list, or press the microphone in a session.</div>}
     </Card>
   );
 }

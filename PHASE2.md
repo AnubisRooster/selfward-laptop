@@ -26,7 +26,7 @@ Each step below is one commit, ends with tests (stubbed model, temp data folder)
 - Sensitive material is never sent to a cloud model: if the chat model is a cloud one, narrative building uses the local model or asks first. Export as Markdown.
 - Needs Steps 2 and 3. Risk: medium (long prompts on a small model; test with `qwen2.5:7b` if installed).
 
-## Step 5. Voice (iPhone: SpeechService, TTSCoordinator, VoiceConversationController)
+## Step 5. Voice (DONE, except trying it with a real microphone and speakers) (iPhone: SpeechService, TTSCoordinator, VoiceConversationController)
 - **Reuse SmartWard's stack instead of rewriting:** Kokoro read-aloud server (`tts/`, port 8880) and Whisper microphone listener (`stt/`), with the hands-free loop (`useHandsFree.ts`, `voiceInput.ts`, `voiceIntent.ts`).
 - **Choice to make before starting:** share SmartWard's already installed servers (nothing extra to download, but Selfward then needs SmartWard's folder) or install a second copy (about 1 GB). Recommended: make the folder a setting and default to SmartWard's if present.
 - **Per-guide voices** (therapist, companion, advisor each keep a voice) as on the phone.

@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import { ago, del, errText, get, patch, post } from '../api';
-import { useLoad, useNav } from '../hooks';
+import { speech, useLoad, useNav } from '../hooks';
 import { Badge, Btn, Empty, Err, Field, Modal, inputCls, cx } from '../ui';
 import { ask, toast } from '../feedback';
-import { Archive, Moon, NotebookPen, Square, Trash2 } from 'lucide-react';
+import { useHandsFree } from '../useHandsFree';
+import { plainForSpeech } from '../voiceInput';
+import { wantAudioChat } from '../voiceIntent';
+import { Archive, Mic, MicOff, Moon, NotebookPen, Square, Trash2, Volume2 } from 'lucide-react';
 
 const label = (m: string) => m.replace(/_/g, ' ').replace(/\b(cbt|dbt|act|ifs)\b/i, s => s.toUpperCase()).replace(/^./, c => c.toUpperCase());
 
@@ -33,7 +36,7 @@ function NewSession({ catalog, settings, onClose, onCreated }: { catalog: any; s
   );
 }
 
-function Bubble({ m, who, sessionId }: { m: any; who: string; sessionId: number }) {
+function Bubble({ m, who, sessionId, persona }: { m: any; who: string; sessionId: number; persona: string }) {
   const { go } = useNav(); const cap = m.meta?.captured || {};
   const mine = m.role === 'user'; const safety = m.meta?.safety; const failed = m.meta?.error;
   return (
@@ -45,6 +48,7 @@ function Bubble({ m, who, sessionId }: { m: any; who: string; sessionId: number 
         {(cap.dream || cap.note) && <div className="mt-1.5 flex flex-wrap gap-1.5">
           {cap.dream && <button onClick={() => go('insights', { sessionId })} className="flex items-center gap-1 rounded-full bg-zinc-700/60 px-2 py-0.5 text-[11px] hover:bg-zinc-700" title="This sounded like a dream, so it was saved. See it in Insights."><Moon size={11} aria-hidden /> Dream saved</button>}
           {cap.note && <button onClick={() => go('insights', { sessionId })} className="flex items-center gap-1 rounded-full bg-zinc-700/60 px-2 py-0.5 text-[11px] hover:bg-zinc-700" title="A summary note for this session was started. See it in Insights."><NotebookPen size={11} aria-hidden /> Note started</button>}</div>}
+        {!mine && m.content && !m.meta?.streaming && speech.supported && <button className="mt-1 flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 focus:text-zinc-300" onClick={() => speech.speak(plainForSpeech(m.content), 1, '', persona)}><Volume2 size={11} aria-hidden /> Read aloud</button>}
         {m.meta?.cancelled && <div className="mt-1 text-[11px] text-zinc-400">stopped</div>}
       </div>
     </div>
@@ -60,14 +64,17 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [n, last]);
   useEffect(() => { setText(''); setErr(''); box.current?.focus(); }, [id]);
   useEffect(() => { if (!running) box.current?.focus(); }, [running]);
-  if (error && !s) return <Empty icon="⚠" title="Couldn’t open this session">{error}</Empty>;
-  if (!s) return null;
-  const send = async () => {
-    const t = text.trim(); if (!t || running || sending) return;
+  const sendText = async (t: string) => {
+    t = t.trim(); if (!t) return;
     setSending(true); setErr('');
-    try { await post(`/sessions/${id}/send`, { text: t }); setText(''); await reload(); } catch (e) { setErr(errText(e)); }
+    try { await post(`/sessions/${id}/send`, { text: t }); await reload(); } catch (e) { setErr(errText(e)); }
     setSending(false);
   };
+  const send = async () => { const t = text.trim(); if (!t || running || sending) return; setText(''); await sendText(t); };
+  const stopAnswer = async () => { await post(`/sessions/${id}/cancel`); reload(); };
+  const hf = useHandsFree({ running: !!running, messages: s?.messages || [], persona: s?.persona || '', send: sendText, stop: stopAnswer });
+  if (error && !s) return <Empty icon="⚠" title="Couldn’t open this session">{error}</Empty>;
+  if (!s) return null;
   const set = async (body: any) => { try { await patch(`/sessions/${id}`, body); reload(); } catch (e) { toast.error(errText(e)); } };
   const rename = async () => { const t = await ask.prompt({ title: 'Rename session', initial: s.title, confirmLabel: 'Save' }); if (t?.trim()) set({ title: t.trim() }); };
   const remove = async () => {
@@ -81,16 +88,20 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
         <div className="min-w-0 flex-1"><button onClick={rename} className="block max-w-full truncate text-left text-sm font-semibold hover:underline" title="Rename">{s.title}</button>
           <div className="text-xs text-zinc-500">{s.persona_name}{s.persona === 'therapist' && ` · ${label(s.modality)}`}</div></div>
         {s.persona === 'therapist' && <select aria-label="Approach" className={cx(inputCls, '!w-auto !py-1 text-xs')} value={s.modality} onChange={e => set({ modality: e.target.value })}>{catalog.modalities.map((m: any) => <option key={m.id} value={m.id}>{label(m.id)}</option>)}</select>}
+        <Btn small kind={hf.on ? 'primary' : 'ghost'} title={hf.on ? 'Hands-free is on: turn it off' : 'Hands-free: talk to the guide and hear the answers'} label="Hands-free" onClick={hf.toggle}>{hf.on ? <Mic size={14} aria-hidden /> : <MicOff size={14} aria-hidden />}</Btn>
         <Btn small kind="ghost" title="Archive" label="Archive" onClick={async () => { await set({ archived: true }); onGone(); }}><Archive size={14} aria-hidden /></Btn>
         <Btn small kind="ghost" title="Delete" label="Delete" onClick={remove}><Trash2 size={14} aria-hidden /></Btn>
       </header>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
         {n === 0 && <Empty icon="✎" title={`Say hello to ${s.persona_name}`}>Whatever is on your mind. This stays on this computer; the model runs here unless you chose a cloud model in Settings.</Empty>}
-        {s.messages.map((m: any) => <Bubble key={m.id} m={m} who={s.persona_name} sessionId={id} />)}
+        {s.messages.map((m: any) => <Bubble key={m.id} m={m} who={s.persona_name} sessionId={id} persona={s.persona} />)}
         <div ref={end} />
       </div>
       <div className="border-t border-zinc-800 p-3">
-        <Err>{err}</Err>
+        <Err>{err || hf.error}</Err>
+        {hf.on && <div role="status" className="mb-2 flex items-center gap-2 rounded-lg border border-emerald-800 bg-emerald-950/30 px-3 py-1.5 text-xs text-emerald-200"><Mic size={12} aria-hidden /> {{ off: '', loading: 'Getting the microphone ready…', listening: 'Listening. Just talk; pause when you are done.', hearing: 'Hearing you…', thinking: `${s.persona_name} is answering…`, speaking: `${s.persona_name} is speaking. I am not listening meanwhile.` }[hf.status]}
+          <span className="text-emerald-300/70">Everything is heard and spoken on this computer. Say “stop” to interrupt, “stop listening” to finish.</span>
+          {hf.status === 'speaking' && <button type="button" className="ml-auto rounded border border-emerald-700 px-2 py-0.5 hover:bg-emerald-900/40" onClick={() => speech.stop()}>Stop talking</button>}</div>}
         <div className="flex items-end gap-2">
           <textarea ref={box} rows={2} value={text} onChange={e => setText(e.target.value)} aria-label="Message" placeholder={running ? `${s.persona_name} is answering…` : 'Write here. Enter sends, Shift+Enter adds a line.'}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} className={cx(inputCls, 'resize-none')} />
@@ -115,7 +126,7 @@ export default function Chats() {
     <div className="flex h-full">
       <section className={cx('flex min-h-0 w-full flex-col border-zinc-800 md:w-80 md:shrink-0 md:border-r', sessionId != null && 'hidden md:flex')}>
         <div className="flex items-center justify-between border-b border-zinc-800 p-3"><h1 className="text-lg font-semibold">{showArchived ? 'Archived' : 'Sessions'}</h1>
-          <div className="flex gap-1.5"><Btn small kind="ghost" onClick={() => setShowArchived(a => !a)}>{showArchived ? 'Back' : 'Archive'}</Btn><Btn small kind="primary" disabled={!catalog || !settings} onClick={() => setCreating(true)}>+ New</Btn></div></div>
+          <div className="flex gap-1.5"><Btn small title="Start a new session and just talk: it listens and speaks the answers" disabled={!catalog || !settings} onClick={async () => { try { const r = await post('/sessions', { persona: settings.default_persona, modality: settings.default_modality }); wantAudioChat(); reload(); open(r.id); } catch (e) { toast.error(errText(e)); } }}><Mic size={13} aria-hidden /> Talk</Btn><Btn small kind="ghost" onClick={() => setShowArchived(a => !a)}>{showArchived ? 'Back' : 'Archive'}</Btn><Btn small kind="primary" disabled={!catalog || !settings} onClick={() => setCreating(true)}>+ New</Btn></div></div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {(list || []).length === 0 && <Empty icon="✎" title={showArchived ? 'Nothing archived' : 'No sessions yet'}>{showArchived ? '' : 'Start one when you are ready. You choose who to talk with, and for the therapist, which approach.'}</Empty>}
           {(list || []).map(c => (

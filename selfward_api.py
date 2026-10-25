@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, memory, narrative, openrouter, personas, safety
+from sf import db, llm, chat, graph, insights, memory, narrative, openrouter, personas, safety, stt, tts
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -57,6 +57,9 @@ def put_settings(body: dict):
         if k == "api_key" and v is True: continue          # the UI only ever sees "set / not set"
         if k == "default_persona" and v not in personas.KINDS: bad("Unknown persona.")
         if k == "default_modality" and v not in ALL_MODALITIES: bad("Unknown approach.")
+        if k.startswith("tts_") or k.startswith("voice_"):
+            try: tts.validate_setting(k, v, body.get("values"))
+            except ValueError as e: bad(str(e))
         if k == "context_tokens":
             try: v = int(v)
             except (TypeError, ValueError): bad("The window must be a number of tokens.")
@@ -81,6 +84,45 @@ def models_test(body: dict = None):
     try: llm.text([{"role": "user", "content": "Reply with the single word: ok"}], model=model, timeout=90)
     except Exception as e: bad(llm.friendly_error(e), 502)
     return {"ok": True, "model": model}
+
+# ---------- voice: read aloud, and speech input for hands-free ----------
+@app.get("/api/tts/status")
+def tts_status(): return tts.status()
+
+@app.post("/api/tts")
+def tts_speak(body: dict):
+    persona = body.get("persona")
+    voice = body.get("voice") or (db.get_setting("voice_" + persona) if persona in personas.KINDS else "") or db.get_setting("tts_voice")
+    speed = body.get("speed") if body.get("speed") is not None else (db.get_setting("voice_rate") or 1.0)
+    try: audio = tts.synth(str(body.get("text", "")), voice, float(speed))
+    except (ValueError, TypeError) as e: bad(str(e))
+    except httpx.HTTPError: bad("The speech server isn't running yet. It starts by itself when it is installed; try again in a few seconds.", 502)
+    except RuntimeError as e: bad(str(e), 502)
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+@app.get("/api/voice/status")
+def voice_status(): return stt.status()
+
+@app.post("/api/voice/start")
+def voice_start():
+    try: stt.start()
+    except RuntimeError as e: bad(str(e), 409)
+    return stt.status()
+
+@app.post("/api/voice/stop")
+def voice_stop(): stt.stop(); return stt.status()
+
+@app.post("/api/voice/pause")
+def voice_pause(): return {"ok": stt.send("pause")}
+
+@app.post("/api/voice/resume")
+def voice_resume(): return {"ok": stt.send("resume")}
+
+@app.get("/api/voice/poll")
+def voice_poll(after: int = 0): return stt.poll(after)
+
+@app.on_event("shutdown")
+def _close_microphone(): stt.stop()
 
 # ---------- sessions & chat ----------
 def _session_row(s):
