@@ -48,6 +48,8 @@ def _add_column(table, column, decl):
 
 _add_column("sessions", "summary", "TEXT DEFAULT ''")
 _add_column("sessions", "summary_covered", "INTEGER DEFAULT 0")
+_add_column("sessions", "tradition", "TEXT DEFAULT ''")        # the advisor's tradition for this session; empty follows Settings
+_add_column("sessions", "personality", "TEXT DEFAULT ''")      # the companion's personality for this session; empty follows Settings
 _add_column("sessions", "flirt", "INTEGER DEFAULT -1")      # -1: follow Settings
 for _f in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"):
     try: os.chmod(_f, 0o600)

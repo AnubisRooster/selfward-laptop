@@ -73,3 +73,23 @@ class Dial(unittest.TestCase):
         sid = companion_session(3); m = talk(sid, "I want to kill myself"); self.assertEqual(m.calls, [])
     def test_catalog_lists_the_four_levels(self):
         self.assertEqual([w["id"] for w in client.get("/api/catalog").json()["warmth"]], [0, 1, 2, 3])
+
+class PerSessionStyle(unittest.TestCase):
+    def setUp(self): reset()
+    def test_advisor_tradition_per_session_and_mid_chat(self):
+        client.put("/api/settings", json={"values": {"spiritual_tradition": "stoic"}})
+        a = client.post("/api/sessions", json={"persona": "spiritual", "tradition": "taoist"}).json()["id"]
+        b = client.post("/api/sessions", json={"persona": "spiritual"}).json()["id"]
+        self.assertEqual(client.get(f"/api/sessions/{a}").json()["style_effective"], "taoist")
+        self.assertEqual(client.get(f"/api/sessions/{b}").json()["style_effective"], "stoic")        # follows Settings
+        m = talk(a, "hi"); self.assertIn("Tao", m.calls[0][0]["content"]); self.assertEqual(last(a)["meta"]["style"], "taoist")
+        self.assertEqual(client.patch(f"/api/sessions/{a}", json={"tradition": "buddhist"}).status_code, 200)
+        m = talk(a, "again"); self.assertNotIn("Tao", m.calls[0][0]["content"].split("Your orientation")[1][:200]); self.assertEqual(last(a)["meta"]["style"], "buddhist")
+        self.assertEqual(client.get(f"/api/sessions/{a}").json()["messages"][1]["meta"]["style"], "taoist")   # earlier reply keeps its own
+        self.assertEqual(client.patch(f"/api/sessions/{a}", json={"tradition": "klingon"}).status_code, 400)
+        client.patch(f"/api/sessions/{a}", json={"tradition": ""}); self.assertEqual(client.get(f"/api/sessions/{a}").json()["style_effective"], "stoic")
+    def test_companion_personality_per_session_including_machiavellian(self):
+        sid = client.post("/api/sessions", json={"persona": "companion", "personality": "machiavelli"}).json()["id"]
+        m = talk(sid, "hi"); self.assertIn("48 Laws of Power", m.calls[0][0]["content"])
+        client.patch(f"/api/sessions/{sid}", json={"personality": "calm"}); m = talk(sid, "hi"); self.assertNotIn("48 Laws", m.calls[0][0]["content"])
+        self.assertEqual(client.post("/api/sessions", json={"persona": "companion", "personality": "nope"}).status_code, 400)

@@ -5,11 +5,11 @@ from .prompts import MODALITY_PROMPTS
 
 _running = set(); _cancelled = set()
 
-def new_session(persona=None, modality=None, title=None):
+def new_session(persona=None, modality=None, title=None, tradition="", personality=""):
     persona = persona if persona in personas.KINDS else (db.get_setting("default_persona") or "therapist")
     modality = modality if modality in MODALITY_PROMPTS else (db.get_setting("default_modality") or "integrated")
     title = title or "New session"
-    return db.x("INSERT INTO sessions(title,persona,modality,created,updated) VALUES(?,?,?,?,?)", (title, persona, modality, db.now(), db.now()))
+    return db.x("INSERT INTO sessions(title,persona,modality,tradition,personality,created,updated) VALUES(?,?,?,?,?,?,?)", (title, persona, modality, tradition, personality, db.now(), db.now()))
 
 def _store(session_id, role, content, meta=None):
     return db.x("INSERT INTO messages(session_id,role,content,meta,ts) VALUES(?,?,?,?,?)", (session_id, role, content, json.dumps(meta or {}), db.now()))
@@ -54,7 +54,7 @@ def _touch(session_id, first_text):
     db.x("UPDATE sessions SET updated=? WHERE id=?", (db.now(), session_id))
 
 def build_messages(session, history, user_text, memories, recap="", important=(), older=()):
-    persona = personas.resolve(session["persona"])
+    persona = personas.resolve(session["persona"], session)
     msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))}]
     if important: msgs.append({"role": "system", "content": "Things that have mattered to this person across sessions:\n" + "\n".join("- " + m for m in important)})
     if memories: msgs.append({"role": "system", "content": "Relevant context from previous sessions:\n" + "\n".join("- " + m for m in memories)})
@@ -66,7 +66,7 @@ def build_messages(session, history, user_text, memories, recap="", important=()
 
 def fit(session, earlier, user_text, memories, important):
     """Builds the prompt so it fits the model's window: older turns become a recap, then memories and turns are dropped until it fits."""
-    window = llm.context_tokens(); persona = personas.resolve(session["persona"])
+    window = llm.context_tokens(); persona = personas.resolve(session["persona"], session)
     system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))
     older = []
     budget = compact.history_budget(window, system_text, "\n".join(memories) + "\n".join(important) + "x" * 1500, user_text)    # room for what recall may add
@@ -91,7 +91,7 @@ _background = []        # recap refreshes in flight (tests wait on them)
 def _refresh_recap(session, everything):
     """After the answer: folds older turns into the stored recap, so the next long turn has it. A failure only means the next turn trims instead."""
     try:
-        persona = personas.resolve(session["persona"])
+        persona = personas.resolve(session["persona"], session)
         budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", "")), "x" * 2400, "x" * 400)
         with tagging.MODEL_LOCK:
             compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
@@ -111,8 +111,8 @@ def join_background(timeout=30):
 
 def _who(session, persona=None):
     """Which guide (and approach) is speaking, as it was when the reply was written."""
-    p = persona or personas.resolve(session["persona"])
-    return {"persona": p["kind"], "persona_name": p["display"], **({"modality": session["modality"]} if p["kind"] == "therapist" else {})}
+    p = persona or personas.resolve(session["persona"], session)
+    return {"persona": p["kind"], "persona_name": p["display"], **({"modality": session["modality"]} if p["kind"] == "therapist" else {"style": p["style"]} if p["style"] else {})}
 
 def _capture(session_id, user_text, earlier):
     """What your message adds besides the answer: the inner map, a dream record, the session's summary note. Never blocks the answer."""

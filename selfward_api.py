@@ -230,11 +230,17 @@ def _check_model(m):
     if not isinstance(m, str) or not MODEL_RE.match(m): bad("That doesn't look like a model id (for example ollama_chat/llama3.2:3b).")
     return m
 
+def _style(v, companion=False):
+    """A per-session advisor tradition or companion personality; empty means follow Settings."""
+    if v in (None, ""): return ""
+    if v not in (COMPANION_PERSONALITY_LABELS if companion else SPIRITUAL_TRADITION_LABELS): bad("Unknown personality." if companion else "Unknown tradition.")
+    return v
+
 def _session_row(s):
-    p = personas.resolve(s["persona"]); eff = s.get("model") or db.get_setting("model")
+    p = personas.resolve(s["persona"], s); eff = s.get("model") or db.get_setting("model")
     last = db.q("SELECT content FROM messages WHERE session_id=? AND role='assistant' AND content!='' ORDER BY id DESC LIMIT 1", (s["id"],), one=True)
     n = lambda sql: db.q(sql, (s["id"],), one=True)["n"]
-    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff), "flirt_effective": companion.level_for(s, p["kind"]),
+    return {**s, "persona_name": p["display"], "preview": (last["content"] if last else "")[:120], "model_effective": eff, "model_is_local": llm.is_local(eff), "style_effective": p["style"], "flirt_effective": companion.level_for(s, p["kind"]),
             "message_count": n("SELECT COUNT(*) n FROM messages WHERE session_id=? AND content!=''"), "node_count": n("SELECT COUNT(*) n FROM graph_nodes WHERE session_id=?"), "memory_count": n("SELECT COUNT(*) n FROM memories WHERE session_id=?")}
 
 @app.get("/api/sessions")
@@ -243,7 +249,8 @@ def sessions(archived: bool = False):
 
 @app.post("/api/sessions")
 def session_new(body: dict):
-    sid = chat.new_session(body.get("persona"), body.get("modality"), body.get("title"))
+    trad, pers = _style(body.get("tradition")), _style(body.get("personality"), companion=True)
+    sid = chat.new_session(body.get("persona"), body.get("modality"), body.get("title"), trad, pers)
     if body.get("model"): db.x("UPDATE sessions SET model=? WHERE id=?", (_check_model(body["model"]), sid))
     return {"id": sid, "preflight": preflight()}
 
@@ -257,8 +264,9 @@ def session_get(sid: int):
 
 @app.patch("/api/sessions/{sid}")
 def session_patch(sid: int, body: dict):
-    for k in ("title", "persona", "modality", "system_prompt", "model", "archived", "flirt"):
+    for k in ("title", "persona", "modality", "system_prompt", "model", "archived", "flirt", "tradition", "personality"):
         if k not in body: continue
+        if k in ("tradition", "personality"): body[k] = _style(body[k], companion=k == "personality")
         if k == "flirt":
             v = body[k]
             if isinstance(v, bool) or not isinstance(v, int) or not -1 <= v <= 3: bad("Warmth is a whole number from 0 to 3 (or -1 to follow Settings).")
@@ -511,9 +519,9 @@ def export_json():
 def export_md():
     out = []
     for s in db.q("SELECT * FROM sessions ORDER BY created"):
-        out += [f"# {s['title']}", f"_{personas.resolve(s['persona'])['display']} · {s['modality']} · {time.strftime('%Y-%m-%d', time.localtime(s['created']))}_", ""]
+        out += [f"# {s['title']}", f"_{personas.resolve(s['persona'], s)['display']} · {s['modality']} · {time.strftime('%Y-%m-%d', time.localtime(s['created']))}_", ""]
         for m in db.q("SELECT role,content FROM messages WHERE session_id=? AND content!='' ORDER BY id", (s["id"],)):
-            out.append(f"**{'You' if m['role'] == 'user' else personas.resolve(s['persona'])['display']}:** {m['content']}\n")
+            out.append(f"**{'You' if m['role'] == 'user' else personas.resolve(s['persona'], s)['display']}:** {m['content']}\n")
         out.append("\n---\n")
     return Response("\n".join(out), media_type="text/markdown", headers={"Content-Disposition": "attachment; filename=selfward-journal.md"})
 

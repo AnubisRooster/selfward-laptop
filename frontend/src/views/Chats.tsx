@@ -20,8 +20,9 @@ const label = (m: string) => m.replace(/_/g, ' ').replace(/\b(cbt|dbt|act|ifs)\b
 function NewSession({ catalog, settings, onClose, onCreated }: { catalog: any; settings: any; onClose: () => void; onCreated: (id: number) => void }) {
   const [persona, setPersona] = useState<string>(settings.default_persona || 'therapist');
   const [modality, setModality] = useState<string>(settings.default_modality || 'integrated'); const [title, setTitle] = useState('');
+  const [tradition, setTradition] = useState<string>(settings.spiritual_tradition || 'interfaith'); const [personality, setPersonality] = useState<string>(settings.companion_personality || 'warm');
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-  const go = async () => { setBusy(true); try { const r = await post('/sessions', { persona, modality, ...(title.trim() ? { title: title.trim() } : {}) }); onCreated(r.id); } catch (e) { setErr(errText(e)); setBusy(false); } };
+  const go = async () => { setBusy(true); try { const r = await post('/sessions', { persona, modality, ...(persona === 'spiritual' ? { tradition } : {}), ...(persona === 'companion' ? { personality } : {}), ...(title.trim() ? { title: title.trim() } : {}) }); onCreated(r.id); } catch (e) { setErr(errText(e)); setBusy(false); } };
   return (
     <Modal title="New session" onClose={onClose}>
       <div className="space-y-4">
@@ -34,6 +35,8 @@ function NewSession({ catalog, settings, onClose, onCreated }: { catalog: any; s
               <span className="min-w-0"><div className="text-sm font-medium">{(settings[p.id + '_name'] || p.default_name || p.label)}<span className="ml-2 text-xs font-normal text-zinc-500">{p.label}</span></div>
               <div className="text-xs text-zinc-500">{p.blurb}</div></span></button>))}
         </div>
+        {persona === 'spiritual' && <StylePicker label="Tradition" options={catalog.traditions} value={tradition} onPick={setTradition} />}
+        {persona === 'companion' && <StylePicker label="Personality" options={catalog.personalities} value={personality} onPick={setPersonality} />}
         {persona === 'therapist' && <div><div className="mb-1 text-xs font-medium text-zinc-400">Approach</div>
           <ApproachGrid catalog={catalog} value={modality} onPick={setModality} /></div>}
         <Err>{err}</Err>
@@ -81,6 +84,24 @@ function ApproachDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: a
     </Modal>
   );
 }
+
+function StylePicker({ label, options, value, onPick }: { label: string; options: any[]; value: string; onPick: (v: string) => void }) {
+  return <div><div className="mb-1 text-xs font-medium text-zinc-400">{label} <span className="font-normal text-zinc-500">(for this session; the default is in Settings)</span></div>
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{options.map((o: any) => (
+      <button key={o.id} role="radio" aria-checked={value === o.id} onClick={() => onPick(o.id)} className={cx('rounded-lg border px-2.5 py-1.5 text-left text-sm', value === o.id ? 'border-indigo-500 bg-indigo-950/30' : 'border-zinc-700 hover:bg-zinc-800')}>{o.label}</button>))}</div></div>;
+}
+
+function StyleDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: any; onClose: () => void; onChanged: () => void }) {
+  const adv = s.persona === 'spiritual'; const [err, setErr] = useState('');
+  const pick = async (v: string) => { if (v === s.style_effective) return onClose(); try { await patch(`/sessions/${s.id}`, { [adv ? 'tradition' : 'personality']: v }); toast.ok(adv ? `Now drawing on ${styleName(catalog.traditions, v)}.` : `Personality is now ${styleName(catalog.personalities, v)}.`); onChanged(); onClose(); } catch (e) { setErr(errText(e)); } };
+  return (
+    <Modal title={adv ? 'Tradition' : 'Personality'} onClose={onClose}>
+      <div className="space-y-3"><div className="text-xs text-zinc-500">Changes from your next message on. Earlier replies keep the one they were written in. This session only; the default for new sessions is in Settings.</div><Err>{err}</Err>
+        <StylePicker label={adv ? 'Tradition' : 'Personality'} options={adv ? catalog.traditions : catalog.personalities} value={s.style_effective} onPick={pick} /></div>
+    </Modal>
+  );
+}
+const styleName = (opts: any[], id: string) => (opts || []).find(o => o.id === id)?.label || id;
 
 function WarmthDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: any; onClose: () => void; onChanged: () => void }) {
   const { data: settings, reload } = useLoad<any>('/settings'); const [err, setErr] = useState('');
@@ -154,7 +175,7 @@ function ModelDialog({ s, onClose, onChanged }: { s: any; onClose: () => void; o
   );
 }
 
-function Bubble({ m, session }: { m: any; session: any }) {
+function Bubble({ m, session, catalog }: { m: any; session: any; catalog: any }) {
   const { go } = useNav(); const cap = m.meta?.captured || {};
   const mine = m.role === 'user'; const safety = m.meta?.safety; const failed = m.meta?.error;
   const kind: string = m.meta?.persona || session.persona; const who: string = m.meta?.persona_name || session.persona_name; const approach: string | undefined = m.meta?.persona ? m.meta.modality : (kind === 'therapist' ? session.modality : undefined);
@@ -168,6 +189,7 @@ function Bubble({ m, session }: { m: any; session: any }) {
         <div className={cx('rounded-2xl px-4 py-2.5 text-[15px]', mine ? 'bg-indigo-600 text-white' : safety === 'crisis' || safety === 'method' ? 'border border-amber-700 bg-amber-950/40 text-amber-50' : failed ? 'border border-red-900 bg-red-950/30 text-red-200' : 'bg-zinc-800 text-zinc-100')}>
           {!mine && <div className="mb-0.5 flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-zinc-400">{who}
             {approach && <span className="inline-flex items-center gap-1 font-normal text-zinc-500" title="The approach this reply was written in"><ModalityIcon id={approach} size={11} />{label(approach)}</span>}
+            {m.meta?.style && <span className="font-normal text-zinc-500" title="The tradition or personality this reply was written in">{styleName(kind === 'spiritual' ? catalog.traditions : catalog.personalities, m.meta.style)}</span>}
             {m.meta?.model && <span className="inline-flex items-center gap-1 font-normal text-zinc-500" title={m.meta.model}>{isLocalModel(m.meta.model) ? <Cpu size={11} aria-hidden /> : <Cloud size={11} aria-hidden />}{shortModel(m.meta.model)}</span>}
             {safety && <Badge tone="amber">{safety === 'boundary' ? 'kept within safe limits' : String(safety).startsWith('companion_') ? 'kept kind' : 'support resources'}</Badge>}</div>}
           {m.meta?.streaming && !m.content ? <span className="text-zinc-400">…</span> :
@@ -193,7 +215,7 @@ function Bubble({ m, session }: { m: any; session: any }) {
 function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGone: () => void }) {
   const { data: s, error, reload } = useLoad<any>(`/sessions/${id}`, undefined, 1000);
   const [text, setText] = useState(''); const [err, setErr] = useState(''); const [sending, setSending] = useState(false);
-  const [pickModel, setPickModel] = useState(false); const [pickGuide, setPickGuide] = useState(false); const [pickApproach, setPickApproach] = useState(false); const [pickWarmth, setPickWarmth] = useState(false);
+  const [pickModel, setPickModel] = useState(false); const [pickGuide, setPickGuide] = useState(false); const [pickApproach, setPickApproach] = useState(false); const [pickWarmth, setPickWarmth] = useState(false); const [pickStyle, setPickStyle] = useState(false);
   const end = useRef<HTMLDivElement>(null); const box = useRef<HTMLTextAreaElement>(null);
   const running = s?.status === 'running';
   const n = s?.messages?.length || 0; const last = s?.messages?.[n - 1]?.content?.length || 0;
@@ -235,6 +257,7 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <button onClick={() => setPickGuide(true)} title="Change who you are talking with" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800">{s.persona_name}<ChevronDown size={11} aria-hidden /></button>
           {s.persona === 'therapist' && <button onClick={() => setPickApproach(true)} title="Change the approach" className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800"><ModalityIcon id={s.modality} size={12} />{label(s.modality)}<ChevronDown size={11} aria-hidden /></button>}
+          {(s.persona === 'spiritual' || s.persona === 'companion') && <button onClick={() => setPickStyle(true)} title={s.persona === 'spiritual' ? 'Change the tradition the advisor draws on' : 'Change the personality'} className="flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 hover:bg-zinc-800">{styleName(s.persona === 'spiritual' ? catalog.traditions : catalog.personalities, s.style_effective)}<ChevronDown size={11} aria-hidden /></button>}
           {s.persona === 'companion' && (s.flirt_effective > 0 ?
             <span className="flex items-center overflow-hidden rounded-full border border-rose-700 bg-rose-950/30 text-rose-200"><button onClick={() => setPickWarmth(true)} title="Change the warmth" className="flex items-center gap-1 px-2.5 py-1 hover:bg-rose-900/40"><Heart size={12} fill="currentColor" aria-hidden />Warmth {s.flirt_effective} · {catalog.warmth[s.flirt_effective]?.label}</button>
               <button onClick={() => set({ flirt: 0 })} title="Turn the warmth off for this session" aria-label="Turn the warmth off for this session" className="border-l border-rose-700 px-2 py-1 hover:bg-rose-900/40">Off</button></span> :
@@ -249,11 +272,12 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
       </header>
       {pickGuide && <GuideDialog s={s} catalog={catalog} onClose={() => setPickGuide(false)} onChanged={reload} />}
       {pickApproach && <ApproachDialog s={s} catalog={catalog} onClose={() => setPickApproach(false)} onChanged={reload} />}
+      {pickStyle && <StyleDialog s={s} catalog={catalog} onClose={() => setPickStyle(false)} onChanged={reload} />}
       {pickWarmth && <WarmthDialog s={s} catalog={catalog} onClose={() => setPickWarmth(false)} onChanged={reload} />}
       {pickModel && <ModelDialog s={s} onClose={() => setPickModel(false)} onChanged={reload} />}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
         {n === 0 && <Empty icon="✎" title={`Say hello to ${s.persona_name}`}>Whatever is on your mind. This stays on this computer; the model runs here unless you chose a cloud model in Settings.</Empty>}
-        {s.messages.map((m: any) => <Bubble key={m.id} m={m} session={s} />)}
+        {s.messages.map((m: any) => <Bubble key={m.id} m={m} session={s} catalog={catalog} />)}
         <div ref={end} />
       </div>
       <div className="border-t border-zinc-800 p-3">

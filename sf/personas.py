@@ -8,16 +8,19 @@ KINDS = {
     "spiritual": {"label": "Spiritual Advisor", "default_name": "Sage", "blurb": "A wise, non-denominational guide drawing on philosophy and wisdom traditions to help you find meaning and peace."},
 }
 
-def resolve(kind):
+def resolve(kind, session=None):
+    """Who is speaking. A session may carry its own advisor tradition or companion personality; empty or unknown means follow Settings."""
+    own = lambda col, table: (session or {}).get(col) if (session or {}).get(col) in table else None
     kind = kind if kind in KINDS else "therapist"
     name = (db.get_setting(kind + "_name") or "").strip() or KINDS[kind]["default_name"]
     if kind == "companion":
-        traits = "\n".join(x for x in (COMPANION_PERSONALITY.get(db.get_setting("companion_personality")) or COMPANION_PERSONALITY["warm"],
+        traits = "\n".join(x for x in (COMPANION_PERSONALITY.get(own("personality", COMPANION_PERSONALITY) or db.get_setting("companion_personality")) or COMPANION_PERSONALITY["warm"],
                                        COMPANION_GENDER.get(db.get_setting("companion_gender"), "")) if x)
     elif kind == "spiritual":
-        traits = SPIRITUAL_TRADITION.get(db.get_setting("spiritual_tradition")) or SPIRITUAL_TRADITION["interfaith"]
+        traits = SPIRITUAL_TRADITION.get(own("tradition", SPIRITUAL_TRADITION) or db.get_setting("spiritual_tradition")) or SPIRITUAL_TRADITION["interfaith"]
     else: traits = ""
-    return {"kind": kind, "name": name, "display": name or KINDS[kind]["label"], "traits": traits}
+    style = (own("personality", COMPANION_PERSONALITY) or db.get_setting("companion_personality")) if kind == "companion" else (own("tradition", SPIRITUAL_TRADITION) or db.get_setting("spiritual_tradition")) if kind == "spiritual" else ""
+    return {"kind": kind, "name": name, "display": name or KINDS[kind]["label"], "traits": traits, "style": style}
 
 def profile_context():
     s = db.all_settings(); lines = []
