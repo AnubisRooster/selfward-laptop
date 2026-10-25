@@ -37,6 +37,14 @@ def friendly_error(e):
     msg = str(e); key = db.get_setting("api_key")
     if key: msg = msg.replace(key, "•••")
     low = msg.lower()
+    if "data policy" in low or "no endpoints found" in low:
+        return "OpenRouter has no free provider that matches your privacy settings. In your OpenRouter account (openrouter.ai/settings/privacy) allow free models that may use your prompts, or pick a different model."
+    if "agentic harness" in low:
+        return "This free model only works inside coding agents, not in chat. Pick another one (the Automatic one is a safe choice)."
+    if "notfounderror" in low or "not found for account" in low:
+        return "OpenRouter says this model isn't available to your account right now. Pick another free model (the Automatic one is a safe choice)."
+    if "credits" in low or "402" in low:
+        return "OpenRouter says this model needs credits. Choose a free model (ending in :free) or add credits to your account."
     if "connection" in low or "connect" in low and "refused" in low:
         return "I couldn't reach the model. If you use Ollama, make sure it is running (`ollama serve`)."
     if "not found" in low and "model" in low:
@@ -47,7 +55,8 @@ def friendly_error(e):
         return "The provider is rate-limiting requests. Try again in a moment."
     if "context" in low and ("length" in low or "window" in low):
         return "This conversation has grown too long for the model's context window. Start a new session or choose a model with a larger context."
-    last = msg.strip().splitlines()[-1] if msg.strip() else type(e).__name__
+    inner = re.search(r'"message":\s*"([^"]{4,200})"', msg)                    # the provider's own sentence, not a stack of wrappers
+    last = inner.group(1) if inner else (msg.strip().splitlines()[-1] if msg.strip() else type(e).__name__)
     return "I couldn't get an answer just now. " + last[:200]
 
 def json_from(txt):

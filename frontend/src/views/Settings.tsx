@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BASE, ago, del, errText, http, post, put } from '../api';
+import { BASE, ago, del, errText, get, http, post, put } from '../api';
 import { useLoad } from '../hooks';
 import { Badge, Btn, Card, Err, Field, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
@@ -100,6 +100,8 @@ export default function Settings() {
         <div className="flex gap-2 text-xs">{models && <><Badge tone={models.ollama_up ? 'green' : 'amber'}>{models.ollama_up ? 'Ollama running' : 'Ollama not running'}</Badge></>}</div>
       </Card>
 
+      <OpenRouterPicker v={v} setKey={setKey} />
+
       <Remembered v={v} setKey={setKey} save={save} />
 
       <Card className="space-y-3"><h2 className="font-medium">Look</h2>
@@ -155,6 +157,39 @@ function Remembered({ v, setKey, save }: { v: any; setKey: (k: string, val: any)
             <div className="mb-1 flex items-center justify-between gap-2"><div className="flex items-center gap-1.5 text-xs text-zinc-500"><Badge tone={m.manual ? 'indigo' : m.kind === 'insight' ? 'amber' : 'zinc'}>{m.manual ? 'added by you' : m.kind}</Badge>{ago(m.ts)}{m.session_title && ` · ${m.session_title}`}</div>
               <button className="text-xs text-zinc-500 hover:text-red-400" onClick={() => remove(m.id)}>Forget</button></div>
             <p className="whitespace-pre-wrap text-zinc-300">{m.content}</p></li>))}</ul>}
+    </Card>
+  );
+}
+
+function OpenRouterPicker({ v, setKey }: { v: any; setKey: (k: string, val: any) => void }) {
+  const current = String(v.model || '').startsWith('openrouter/');
+  const [list, setList] = useState<any[] | null>(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [q, setQ] = useState(''); const [testing, setTesting] = useState('');
+  const load = async (refresh = false) => { setBusy(true); setErr(''); try { setList((await get('/openrouter/models', { refresh })).models); } catch (e) { setErr(errText(e)); } setBusy(false); };
+  const choose = async (model: string, name: string) => {
+    if (!current && !await ask.confirm({ title: 'Send your sessions to OpenRouter?', body: 'Free models run on OpenRouter’s servers. What you write in a session (and what the guide recalls from earlier ones) leaves this computer, and free providers may keep it or learn from it. Dreams, the Narrative and anything with crisis wording have their own safeguards, but your chats do go. The model on this computer keeps everything here.', confirmLabel: 'Use this model' })) return;
+    try { await put('/settings', { values: { model } }); setKey('model', model); toast.ok(`Sessions now use ${name}.`); } catch (e) { toast.error(errText(e)); }
+  };
+  const back = async () => { const m = 'ollama_chat/llama3.2:3b'; try { await put('/settings', { values: { model: m } }); setKey('model', m); toast.ok('Back on the model on this computer.'); } catch (e) { toast.error(errText(e)); } };
+  const test = async (model: string) => { setTesting(model); try { await post('/models/test', { model }); toast.ok('It answered.'); } catch (e) { toast.error(errText(e)); } setTesting(''); };
+  const shown = (list || []).filter(m => !q.trim() || (m.name + ' ' + m.id).toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <Card className="space-y-3">
+      <details open={current || undefined} onToggle={e => { if ((e.target as HTMLDetailsElement).open && list === null && !busy) load(); }}>
+        <summary className="cursor-pointer font-medium">OpenRouter free models{current && <span className="ml-2 text-xs font-normal text-emerald-400">in use: {String(v.model).replace('openrouter/', '')}</span>}</summary>
+        <div className="mt-3 space-y-3">
+          <div className="rounded-lg border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-100">Free models run on OpenRouter’s servers. What you write in sessions leaves this computer, and free providers may keep it or use it to train models. For private reflection the model on this computer is safer. Memory, the Inner Map, Insights and the crisis check always run here.</div>
+          <div className="text-xs text-zinc-500">{v.api_key ? 'An API key is saved (see “Model” above).' : <>You need an OpenRouter key: create one at <a className="text-indigo-300 underline" href="https://openrouter.ai/keys" target="_blank" rel="noreferrer noopener">openrouter.ai/keys</a> and paste it into “API key” above.</>} Free models are often busy or gated; “Automatic” picks one that is answering. If you see “no endpoints match your data policy”, allow free models in your OpenRouter privacy settings.</div>
+          <Err>{err}</Err>
+          <div className="flex flex-wrap items-center gap-2"><input className={inputCls + ' !w-64'} placeholder="Search models" aria-label="Search models" value={q} onChange={e => setQ(e.target.value)} /><Btn small onClick={() => load(true)} loading={busy}>{list ? 'Refresh the list' : 'Show free models'}</Btn>{current && <Btn small kind="ghost" onClick={back}>Back to the model on this computer</Btn>}</div>
+          {list && shown.length === 0 && <div className="text-sm text-zinc-500">No free models match.</div>}
+          <ul className="space-y-2">{shown.map(m => (
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">{m.name}{m.recommended && <Badge tone="green">recommended</Badge>}{v.model === m.model && <Badge tone="indigo">in use</Badge>}</div>
+                <div className="truncate text-xs text-zinc-500">{m.id} · {m.context ? `${Math.round(m.context / 1000)}k context` : ''}</div></div>
+              <div className="flex gap-2"><Btn small onClick={() => test(m.model)} loading={testing === m.model} disabled={!v.api_key} title={v.api_key ? 'Sends one tiny request to check it answers' : 'Save an API key first'}>Test</Btn>
+                <Btn small kind="primary" onClick={() => choose(m.model, m.name)} disabled={v.model === m.model || !v.api_key}>Use</Btn></div></li>))}</ul>
+        </div>
+      </details>
     </Card>
   );
 }

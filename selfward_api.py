@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, memory, narrative, personas, safety
+from sf import db, llm, chat, graph, insights, memory, narrative, openrouter, personas, safety
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -68,11 +68,19 @@ def put_settings(body: dict):
 def models():
     pre = preflight(); return {"ollama": pre["models"], "current": db.get_setting("model"), "embed": db.get_setting("embed_model"), "ollama_up": pre["ollama"]}
 
+@app.get("/api/openrouter/models")
+def openrouter_models(refresh: bool = False):
+    """The models OpenRouter lets you use for free. The list is public: this is the one request Selfward makes to openrouter.ai before you choose one."""
+    try: return {"models": openrouter.free_models(force=refresh)}
+    except Exception as e: bad("Couldn’t reach OpenRouter to get the list (" + type(e).__name__ + "). Check your connection and try again.", 502)
+
 @app.post("/api/models/test")
-def models_test():
-    try: llm.text([{"role": "user", "content": "Reply with the single word: ok"}], timeout=60)
+def models_test(body: dict = None):
+    """One tiny request to a model (the chosen one, or the one named), so a wrong key or a rate limit shows up here and not in the middle of a session."""
+    model = (body or {}).get("model") or db.get_setting("model")
+    try: llm.text([{"role": "user", "content": "Reply with the single word: ok"}], model=model, timeout=90)
     except Exception as e: bad(llm.friendly_error(e), 502)
-    return {"ok": True, "model": db.get_setting("model")}
+    return {"ok": True, "model": model}
 
 # ---------- sessions & chat ----------
 def _session_row(s):

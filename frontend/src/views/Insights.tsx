@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import { ago, del, errText, patch, post } from '../api';
+import { ago, del, errText, get, patch, post } from '../api';
 import { useLoad, useNav } from '../hooks';
 import { Badge, Btn, Card, Empty, Err, Field, Modal, Seg, Title, inputCls } from '../ui';
 import { ask, toast } from '../feedback';
@@ -57,7 +57,9 @@ export default function Insights() {
 
 function Dream({ d, onChanged, onOpen }: { d: any; onChanged: () => void; onOpen: () => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
-  const read = async () => { setBusy(true); setErr(''); try { await post(`/dreams/${d.id}/interpret`); onChanged(); } catch (e) { setErr(errText(e)); } setBusy(false); };
+  const read = async () => {
+    try { const m = await get('/models'); if (!String(m.current).startsWith('ollama') && !await ask.confirm({ title: 'Send this dream to a cloud model?', body: 'Your chat model is a cloud model, so the dream text will be sent to its provider to write the reading. Switch to the model on this computer in Settings to keep it here.', confirmLabel: 'Send it' })) return; } catch { /* if this can’t be checked the request itself will fail clearly */ }
+    setBusy(true); setErr(''); try { await post(`/dreams/${d.id}/interpret`); onChanged(); } catch (e) { setErr(errText(e)); } setBusy(false); };
   const remove = async () => { if (await ask.confirm({ title: 'Delete this dream?', body: 'It is removed from this computer.', confirmLabel: 'Delete', danger: true })) { await del(`/dreams/${d.id}`); onChanged(); } };
   return (
     <Card className="space-y-2">
