@@ -4,7 +4,7 @@ import httpx, uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sf import db, llm, chat, graph, insights, memory, personas, safety
+from sf import db, llm, chat, graph, insights, memory, narrative, personas, safety
 from sf.prompts import ALL_MODALITIES, MODALITY_DESCRIPTIONS, COMPANION_PERSONALITY_LABELS, COMPANION_GENDER_LABELS, SPIRITUAL_TRADITION_LABELS
 
 app = FastAPI(title="Selfward")
@@ -157,6 +157,36 @@ def graph_graphml(session_id: int = None):
 def graph_cytoscape(session_id: int = None):
     return Response(json.dumps(graph.cytoscape(session_id), indent=1), media_type="application/json", headers={"Content-Disposition": "attachment; filename=selfward-map.json"})
 
+# ---------- the narrative ----------
+@app.get("/api/narrative")
+def narrative_get(): return narrative.view()
+
+@app.post("/api/narrative/build")
+def narrative_build(body: dict):
+    try: material, withheld, more, room = narrative.plan(bool(body.get("local")))
+    except Exception as e: bad(llm.friendly_error(e), 500)
+    if not material:
+        bad(f"The next {'item has' if withheld == 1 else 'items have'} wording that is never sent to a cloud model. Build on this computer to include it." if withheld else "Nothing new to add yet.")
+    if not narrative.start(bool(body.get("local"))): bad("The narrative is already being written.", 409)
+    return {"started": True, "items": len(material)}
+
+@app.put("/api/narrative")
+def narrative_put(body: dict):
+    narrative.set_content(str(body.get("content", ""))); return {"ok": True}
+
+@app.post("/api/narrative/restore")
+def narrative_restore():
+    try: narrative.restore_previous()
+    except ValueError as e: bad(str(e))
+    return {"ok": True}
+
+@app.delete("/api/narrative")
+def narrative_delete(): narrative.reset(); return {"ok": True}
+
+@app.get("/api/narrative/export")
+def narrative_export():
+    return Response(narrative.view()["content"] or "", media_type="text/markdown", headers={"Content-Disposition": "attachment; filename=selfward-narrative.md"})
+
 # ---------- what Selfward remembers ----------
 @app.get("/api/global-memories")
 def global_memories():
@@ -275,7 +305,7 @@ def onboarding_complete(body: dict):
     return {"ok": True}
 
 # ---------- export / backup / erase ----------
-TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes", "global_memories"]
+TABLES = ["sessions", "messages", "memories", "safety_events", "graph_nodes", "graph_edges", "dreams", "notes", "global_memories", "narrative"]
 def _dump(with_blobs=False):
     out = {"version": 1, "exported": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "tables": {}}
     for t in TABLES:

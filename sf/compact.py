@@ -47,14 +47,14 @@ def summarize(block, model=None):
 META = ("misunderstanding", "doesn't make sense", "does not make sense", "i'm happy to help", "i am happy to help", "i'd be happy", "i can't", "i cannot", "as an ai",
         "could you please", "it seems like there", "it appears that there", "repetition of")
 
-def plausible(summary, block):
+def plausible(summary, block, minimum=0.5):
     """A recap replaces the turns it covers for good, so a reply that is a complaint about the input, or isn't about it at all, must not be kept."""
     low = summary.lower()
     if len(summary) < 40 or any(m in low for m in META): return False
     words = {w for w in re.findall(r"[a-z]{5,}", low)}
     if not words: return False
     source = set(re.findall(r"[a-z]{5,}", block.lower()))
-    return len(words & source) / len(words) >= 0.5
+    return len(words & source) / len(words) >= minimum
 
 def for_prompt(session_id, msgs, budget, minimum_recent=RECENT_TURNS):
     """(recap, turns to send word for word). Never calls the model, so a long chat never makes you wait for a summary:

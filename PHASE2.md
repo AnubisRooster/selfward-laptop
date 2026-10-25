@@ -21,7 +21,7 @@ Each step below is one commit, ends with tests (stubbed model, temp data folder)
 - **Rolling summary:** when history exceeds the budget, summarise the older turns with the model into `sessions.summary` and keep recent turns verbatim, replacing today's plain truncation. Fall back to truncation if the summariser fails.
 - Risk: medium (prompt quality with a 3B model). Tests with a stubbed summariser, then a real long-chat run.
 
-## Step 4. Narrative page (iPhone: NarrativeService, NarrativeView, NarrativeExportService)
+## Step 4. Narrative page (DONE) (iPhone: NarrativeService, NarrativeView, NarrativeExportService)
 - A life story written by the model from session notes, dream analyses and global memories, updated incrementally with a watermark (only new material since the last build), at most once an hour unless asked, in the voice of the guide of the latest session.
 - Sensitive material is never sent to a cloud model: if the chat model is a cloud one, narrative building uses the local model or asks first. Export as Markdown.
 - Needs Steps 2 and 3. Risk: medium (long prompts on a small model; test with `qwen2.5:7b` if installed).

@@ -71,7 +71,7 @@ function Conversation({ id, catalog, onGone }: { id: number; catalog: any; onGon
   const set = async (body: any) => { try { await patch(`/sessions/${id}`, body); reload(); } catch (e) { toast.error(errText(e)); } };
   const rename = async () => { const t = await ask.prompt({ title: 'Rename session', initial: s.title, confirmLabel: 'Save' }); if (t?.trim()) set({ title: t.trim() }); };
   const remove = async () => {
-    if (!await ask.confirm({ title: 'Delete this session?', body: 'Its messages and what it taught the memory are removed from this computer. This can’t be undone.', confirmLabel: 'Delete', danger: true })) return;
+    if (!await ask.confirm({ title: 'Delete this session?', body: 'Its messages, notes, dreams and what it taught the memory are removed from this computer. If you have written your Narrative, it may still mention what was in this session: edit or reset it on its page. This can’t be undone.', confirmLabel: 'Delete', danger: true })) return;
     try { await del(`/sessions/${id}`); onGone(); } catch (e) { toast.error(errText(e)); }
   };
   return (
