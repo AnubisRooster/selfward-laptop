@@ -6,6 +6,7 @@ import { ask, toast } from '../feedback';
 import { ThemePref, readPref, setPref } from '../theme';
 import DesktopSettings from './DesktopSettings';
 import RemoteSettings from './RemoteSettings';
+import { openHelp } from '../HelpGuide';
 import { onPhone } from '../device';
 
 function useSettings() {
@@ -61,7 +62,7 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto p-6"><div className="mx-auto max-w-2xl space-y-5">
-      <Title>Settings</Title>
+      <Title right={<Btn small onClick={() => openHelp()}>Help guide</Btn>}>Settings</Title>
 
       <Card className="space-y-3"><h2 className="font-medium">Your guides</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -228,7 +229,7 @@ function VoiceCard({ v, setKey }: { v: any; setKey: (k: string, val: any) => voi
       <Err>{err}</Err>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Natural voice</span>{up ? <Badge tone="green">Running · {voices.length} voices</Badge> : tts?.installed ? <Badge tone="amber">Starting… (it starts by itself)</Badge> : <Badge tone="red">Not installed</Badge>}</div>
       {!onPhone && <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Speech input (hands-free)</span>{mic?.installed ? <Badge tone="green">Installed · {mic.model}</Badge> : <Badge tone="red">Not installed</Badge>}</div>}
-      {(!tts?.installed || (mic && !mic.installed)) && <div className="text-xs text-zinc-500">Selfward uses the voice and listening models from SmartWard’s folder (about 1 GB, so they aren’t copied). {tts?.home ? <>Found: <code>{tts.home}</code>.</> : <>None found: install SmartWard’s <code>tts/setup.sh</code> and <code>stt/setup.sh</code>, or set <code>SELFWARD_VOICE_HOME</code> to a folder that has them.</>} Without them, the browser’s own voice reads aloud and hands-free is unavailable.</div>}
+      {(!tts?.installed || (mic && !mic.installed)) && <div className="text-xs text-zinc-500">Step-by-step: <button className="text-indigo-300 underline" onClick={() => openHelp('voice-reading-aloud-and-talking')}>Help guide → Voice</button>. Selfward uses the voice and listening models from SmartWard’s folder (about 1 GB, so they aren’t copied). {tts?.home ? <>Found: <code>{tts.home}</code>.</> : <>None found: install SmartWard’s <code>tts/setup.sh</code> and <code>stt/setup.sh</code>, or set <code>SELFWARD_VOICE_HOME</code> to a folder that has them.</>} Without them, the browser’s own voice reads aloud and hands-free is unavailable.</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Voice</span><Seg label="Voice engine" value={engine} onChange={x => save({ tts_engine: x })} options={[['auto', 'Automatic'], ['kokoro', 'Natural'], ['browser', 'Browser']]} /></div>
       {natural && <>
         <Field label="Default voice"><div className="flex gap-2"><select className={inputCls} value={v.tts_voice || 'af_heart'} onChange={e => save({ tts_voice: e.target.value })}><VoiceOptions voices={voices} current={v.tts_voice || 'af_heart'} /></select><Btn onClick={() => listen(v.tts_voice, 'default')} loading={busy === 'default'}>▶ Listen</Btn></div></Field>

@@ -4,6 +4,7 @@ import { errText, get, post, put } from '../api';
 import { useLoad } from '../hooks';
 import { Badge, Btn, Card, Err, Field, inputCls } from '../ui';
 import { toast } from '../feedback';
+import { openHelp } from '../HelpGuide';
 import { ago } from '../api';
 
 const Step = ({ ok, children }: { ok: boolean | null; children: any }) => <li className="flex items-start gap-2 text-sm"><span aria-hidden className={ok ? 'text-emerald-400' : 'text-zinc-500'}>{ok ? '✓' : '○'}</span><span>{children}</span></li>;
@@ -23,7 +24,7 @@ export default function RemoteSettings() {
   return (
     <Card className="space-y-3">
       <div id="remote-access" className="scroll-mt-16"><h2 className="font-medium">Remote access (phone)</h2>
-        <div className="text-xs text-zinc-500">Open Selfward from your Android phone or iPhone in its browser, over your private Tailscale network. It is never on the public internet, and you add it to the Home Screen like an app (no app store). Your laptop must be awake and running Selfward. This is your private journal, so a phone stays signed in for 7 days after you last use it. If SmartWard is also published, Selfward uses its own address (the :8443 one) so the two don’t collide.</div></div>
+        <div className="text-xs text-zinc-500">Open Selfward from your Android phone or iPhone in its browser, over your private Tailscale network. It is never on the public internet, and you add it to the Home Screen like an app (no app store). Your laptop must be awake and running Selfward. <button className="text-indigo-300 underline" onClick={() => openHelp('open-it-from-your-phone-tailscale')}>Step-by-step guide</button>. This is your private journal, so a phone stays signed in for 7 days after you last use it. If SmartWard is also published, Selfward uses its own address (the :8443 one) so the two don’t collide.</div></div>
       <Err>{err}</Err>
 
       <ol className="space-y-1.5">

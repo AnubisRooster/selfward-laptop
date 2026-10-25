@@ -7,6 +7,7 @@ import { LifeBuoy, MessageSquare, BookOpenText, HeartPulse, Network, NotebookPen
 import { onDesktopEvent } from './desktop';
 import { onPhone } from './device';
 import RemoteSignIn from './RemoteSignIn';
+import { HelpHost } from './HelpGuide';
 import { reloadForUpdate } from './ErrorBoundary';
 import Onboarding from './views/Onboarding';
 // A view that can't be fetched means this window predates the installed build: reload to pick the new one up.
@@ -126,6 +127,7 @@ export default function App() {
         <div className="min-h-0 flex-1 overflow-hidden"><Suspense fallback={<div className="p-6" role="status"><Spin /></div>}><Body /></Suspense></div>
       </main>
       {help && <HelpNow resources={st.resources} onClose={() => setHelp(false)} />}
+      <HelpHost />
       <FeedbackHost />
     </div>
   );

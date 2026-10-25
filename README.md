@@ -6,6 +6,10 @@ the model (Ollama), the database (SQLite) and the window. Built with the same sh
 > Selfward is **not** a licensed therapist, psychologist or medical provider. It is a journaling and self-reflection tool and cannot diagnose or treat anything.
 > **Get help now** (always in the sidebar) lists the crisis lines for the country chosen in Settings.
 
+## Help guide
+
+Install steps, setup, voice, free models, phone access, updating and troubleshooting are in [HELP.md](HELP.md), also shown in the app: **Settings → Help guide**.
+
 ## Run
 
 - Open **Selfward** from the applications menu (or `bin/start_selfward.sh`). It starts and watches the API (`http://localhost:8100`; SmartWard uses 8000, so both can run).
