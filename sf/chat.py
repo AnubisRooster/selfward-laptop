@@ -55,7 +55,7 @@ def _touch(session_id, first_text):
 
 def build_messages(session, history, user_text, memories, recap="", important=(), older=()):
     persona = personas.resolve(session["persona"], session)
-    msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))}]
+    msgs = [{"role": "system", "content": personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""), session.get("_sealed", False))}]
     if important: msgs.append({"role": "system", "content": "Things that have mattered to this person across sessions:\n" + "\n".join("- " + m for m in important)})
     if memories: msgs.append({"role": "system", "content": "Relevant context from previous sessions:\n" + "\n".join("- " + m for m in memories)})
     if older: msgs.append({"role": "system", "content": "Earlier in this same conversation (no longer shown in full):\n" + "\n".join("- " + m for m in older)})
@@ -67,7 +67,7 @@ def build_messages(session, history, user_text, memories, recap="", important=()
 def fit(session, earlier, user_text, memories, important):
     """Builds the prompt so it fits the model's window: older turns become a recap, then memories and turns are dropped until it fits."""
     window = llm.context_tokens(); persona = personas.resolve(session["persona"], session)
-    system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""))
+    system_text = personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""), session.get("_sealed", False))
     older = []
     budget = compact.history_budget(window, system_text, "\n".join(memories) + "\n".join(important) + "x" * 1500, user_text)    # room for what recall may add
     recap, history = compact.for_prompt(session["id"], earlier, budget)
@@ -92,7 +92,7 @@ def _refresh_recap(session, everything):
     """After the answer: folds older turns into the stored recap, so the next long turn has it. A failure only means the next turn trims instead."""
     try:
         persona = personas.resolve(session["persona"], session)
-        budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", "")), "x" * 2400, "x" * 400)
+        budget = compact.history_budget(llm.context_tokens(), personas.system_prompt(persona, session["modality"], session["system_prompt"] or "", session.get("_extra", ""), session.get("_sealed", False)), "x" * 2400, "x" * 400)
         with tagging.MODEL_LOCK:
             compact.refresh(session["id"], everything, budget, summarizer=lambda block: compact.summarize(block, llm.current_model(session)))
     except Exception as e:
@@ -134,10 +134,10 @@ def _turn(session_id, user_text):
         extra, warmth = companion.addendum(session, user_text) if session["persona"] == "companion" else ("", {})        # the companion's warmth dial for this turn
         private = warmth.get("flirt", 0) > 0                     # warm chats leave nothing behind: no map, memories, dreams, notes or tagging
         captured = {} if private else _capture(session_id, user_text, earlier)       # from your words alone, so it happens even if the model is down
-        memories = memory.recall(user_text, exclude_session=session_id)
-        important = memory.recall_global(user_text, exclude_session=session_id)
+        memories = [] if private else memory.recall(user_text, exclude_session=session_id)             # a warm chat neither adds to nor draws on the rest of your journal
+        important = [] if private else memory.recall_global(user_text, exclude_session=session_id)
         memories = [m for m in memories if m not in important]          # said once, under the stronger heading
-        session = {**session, "_extra": extra}
+        session = {**session, "_extra": extra, "_sealed": private}
         msgs, persona = fit(session, earlier, user_text, memories, important)
         acc = ""
         for piece in llm.stream(msgs, model=llm.current_model(session)):

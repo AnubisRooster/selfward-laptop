@@ -66,10 +66,15 @@ class Dial(unittest.TestCase):
     def test_time_check_can_be_turned_off(self):
         sid = companion_session(2); talk(sid, "hi"); db.x("UPDATE messages SET ts=ts-7300 WHERE session_id=?", (sid,))
         client.put("/api/settings", json={"values": {"companion_time_check": False}}); m = talk(sid, "again"); self.assertNotIn("hours", m.calls[0][0]["content"])
-    def test_people_from_the_inner_map_are_named(self):
-        old = client.post("/api/sessions", json={"persona": "therapist"}).json()["id"]; talk(old, "my sister Ana called me")
-        sid = companion_session(2); m = talk(sid, "hello again")
-        self.assertIn("People in their life", m.calls[0][0]["content"])
+    def test_warm_chats_do_not_draw_on_your_journal(self):
+        client.put("/api/settings", json={"values": {"intake_concerns": "grief after my father died", "user_name": "Alex"}})
+        old = client.post("/api/sessions", json={"persona": "therapist"}).json()["id"]; talk(old, "my sister Ana called me and I feel anxious about my father")
+        sid = companion_session(2); m = talk(sid, "my sister Ana called again, I feel anxious")
+        sysmsgs = " ".join(x["content"] for x in m.calls[0] if x["role"] == "system")
+        self.assertNotIn("grief", sysmsgs); self.assertNotIn("Presenting concerns", sysmsgs); self.assertIn("Alex", sysmsgs)
+        self.assertNotIn("previous sessions", sysmsgs); self.assertNotIn("mattered to this person", sysmsgs)
+        client.patch(f"/api/sessions/{sid}", json={"flirt": 0}); m = talk(sid, "my sister Ana called again, I feel anxious")
+        sysmsgs = " ".join(x["content"] for x in m.calls[0] if x["role"] == "system"); self.assertIn("Presenting concerns", sysmsgs)
     def test_warm_chats_leave_nothing_behind(self):
         sid = companion_session(2)
         talk(sid, "I had a dream about my mother and I feel anxious and ashamed. I always fail.", "I'm here.")

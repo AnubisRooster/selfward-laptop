@@ -79,10 +79,6 @@ def level_for(session, persona_kind=None):
     lvl = max(0, min(3, lvl))
     return lvl if (lvl == 0 or db.get_setting("companion_adult")) else 0
 
-def people_known(limit=4):
-    rows = db.q("SELECT label, SUM(strength) s FROM graph_nodes WHERE type='person' GROUP BY label ORDER BY s DESC LIMIT ?", (limit,))
-    return [r["label"] for r in rows]
-
 def time_due(session_id, now=None):
     """Hours in this session when a gentle 'you have been here a while' is due, else 0. One reminder per two hours, so it does not nag."""
     if not db.get_setting("companion_time_check"): return 0
@@ -103,8 +99,7 @@ def addendum(session, user_text, now=None):
         parts = [LEVEL_BLOCKS[0], DISTRESS_NOTE]; info["tone_dropped"] = True
     if lvl >= 1:
         parts.append(RULES)
-        folks = people_known()
-        if folks and lvl >= 2: parts.append("People in their life that they have mentioned: " + ", ".join(folks) + ". Ask about them now and then and cheer on real time with them.")
+        parts.append("Ask about the real people in their life now and then, as they come up in this chat, and cheer on real time with them.")
         hrs = time_due(session["id"], now) if session.get("id") else 0
         if hrs and lvl >= 2 and not info.get("tone_dropped"):
             parts.append(f"They have been talking with you for about {hrs} hours. Say so once, lightly and kindly, and encourage a stretch, some water, or a message to someone real; then carry on if they want.")

@@ -22,19 +22,21 @@ def resolve(kind, session=None):
     style = (own("personality", COMPANION_PERSONALITY) or db.get_setting("companion_personality")) if kind == "companion" else (own("tradition", SPIRITUAL_TRADITION) or db.get_setting("spiritual_tradition")) if kind == "spiritual" else ""
     return {"kind": kind, "name": name, "display": name or KINDS[kind]["label"], "traits": traits, "style": style}
 
-def profile_context():
+def profile_context(sealed=False):
+    """What the intake told us. Sealed (a warm companion chat) keeps only who you are, never what you went through."""
     s = db.all_settings(); lines = []
     if s["user_name"]:
         line = f"The client's name is {s['user_name']}."
         if s["user_pronouns"]: line += f" Pronouns: {s['user_pronouns']}."
         if s["user_age"]: line += f" Age: {s['user_age']}."
         lines.append(line)
+    if sealed: return ("Client context (from intake):\n" + "\n".join(lines)) if lines else ""
     if s["intake_concerns"]: lines.append(f"Presenting concerns: {s['intake_concerns']}")
     if s["intake_history"]: lines.append(f"Therapy background: {s['intake_history']}")
     if s["intake_goals"]: lines.append(f"Goals: {s['intake_goals']}")
     return ("Client context (from intake):\n" + "\n".join(lines)) if lines else ""
 
-def system_prompt(persona, modality, custom="", extra=""):
+def system_prompt(persona, modality, custom="", extra="", sealed=False):
     if persona["kind"] == "companion":
         prompt = COMPANION_PROMPT.replace("%NAME%", persona["name"] or "Kai").replace("%TRAITS%", persona["traits"])
     elif persona["kind"] == "spiritual":
@@ -42,7 +44,7 @@ def system_prompt(persona, modality, custom="", extra=""):
     else:
         base = MODALITY_PROMPTS.get(modality) or MODALITY_PROMPTS["integrated"]
         prompt = (f"Your name is {persona['name']}. When it feels natural, you can let the client know your name and let it give you a bit of personality.\n\n" + base) if persona["name"] else base
-    ctx = profile_context()
+    ctx = profile_context(sealed)
     if ctx: prompt += "\n\n" + ctx
     if extra: prompt += "\n\n" + extra
     if custom: prompt += "\n\nAdditional instructions: " + custom

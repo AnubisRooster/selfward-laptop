@@ -119,7 +119,7 @@ function WarmthDialog({ s, catalog, onClose, onChanged }: { s: any; catalog: any
     <Modal title="Warmth" onClose={onClose}>
       <div className="space-y-3">
         <div className="text-xs text-zinc-500">How affectionate {s.persona_name} is, from your next message on. It is an AI and says so if you ask, it never pressures you to stay, and it softens when you sound low. Change it or turn it off whenever you like.</div>
-        <div className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400">Any warmth above 0 makes the session private and silent: nothing from it goes on your Inner Map or into memories, dreams, notes, insights or your Narrative.</div>
+        <div className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-400">Any warmth above 0 seals the session both ways. Nothing from it goes on your Inner Map or into memories, dreams, notes, insights or your Narrative, and nothing from your other sessions or your intake answers is used in it.</div>
         <Err>{err}</Err>
         <div role="radiogroup" aria-label="Warmth" className="space-y-1.5">{catalog.warmth.map((w: any) => (
           <button key={w.id} role="radio" aria-checked={cur === w.id} onClick={() => cur === w.id ? onClose() : pick(w.id)} className={cx('flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left', cur === w.id ? 'border-rose-500 bg-rose-950/30' : 'border-zinc-700 hover:bg-zinc-800')}>
